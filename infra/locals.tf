@@ -29,12 +29,13 @@ locals {
       name    = name
       arch    = "x86_64"
       runtime = "java25"
-      handler = "com.example.Handler::handleRequest"
+      handler = "com.acme.Handler::handleRequest"
       path    = abspath(format("%s/../backend/%s/target", path.module, name))
       mvn_cmd = [
         format("cd %s", abspath(format("%s/../backend/%s", path.module, name))),
         "mvn clean package -DskipTests",
-        format("find ./target ! -name '%s*.jar' -delete", name),
+        format("mkdir -p target/lib && mv target/%s*.jar target/lib/", name),
+        "find ./target -mindepth 1 -maxdepth 1 ! -name lib -exec rm -rf {} +",
       ]
     }
   }

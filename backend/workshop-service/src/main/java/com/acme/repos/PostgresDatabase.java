@@ -1,0 +1,124 @@
+package com.acme.repos;
+
+import org.postgresql.Driver;
+
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.Map;
+import java.util.Properties;
+
+/**
+ * Holds one PostgreSQL connection per Lambda instance, opened on first use and reopened when it has gone stale.
+ * The tables are created on first connect, so a fresh database needs no setup.
+ */
+public class PostgresDatabase {
+    private static final String[] SCHEMA = {
+            """
+            CREATE TABLE IF NOT EXISTS projects (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                start_date DATE NOT NULL,
+                end_date DATE NOT NULL,
+                progress_time DOUBLE PRECISION NOT NULL,
+                manager TEXT NOT NULL,
+                budget NUMERIC NOT NULL,
+                status TEXT NOT NULL
+            )""",
+            """
+            CREATE TABLE IF NOT EXISTS milestones (
+                project_id TEXT NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+                id TEXT NOT NULL,
+                sort_order INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                start_date DATE NOT NULL,
+                end_date DATE NOT NULL,
+                progress_time DOUBLE PRECISION NOT NULL,
+                assigned_employees TEXT[] NOT NULL,
+                status TEXT NOT NULL,
+                PRIMARY KEY (project_id, id)
+            )""",
+            """
+            CREATE TABLE IF NOT EXISTS audit_entries (
+                id TEXT PRIMARY KEY,
+                action TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                details JSONB NOT NULL,
+                occurred_at TIMESTAMPTZ NOT NULL
+            )""",
+    };
+
+    /** Work done on the connection inside one transaction. */
+    @FunctionalInterface
+    public interface SqlWork<T> {
+        T apply(Connection connection) throws SQLException;
+    }
+
+    private final String url;
+    private final Properties properties = new Properties();
+    private Connection connection;
+
+    public PostgresDatabase(String url, String user, String password) {
+        this.url = url;
+        if (user != null && !user.isBlank()) {
+            properties.setProperty("user", user);
+            properties.setProperty("password", password == null ? "" : password);
+        }
+    }
+
+    /** Uses the POSTGRES_* variables the deploy scripts give each Lambda. */
+    public static PostgresDatabase fromEnvironment(Map<String, String> env) {
+        return new PostgresDatabase(jdbcUrl(env), env.get("POSTGRES_USER"), env.get("POSTGRES_PASS"));
+    }
+
+    static String jdbcUrl(Map<String, String> env) {
+        String host = valueOrDefault(env, "POSTGRES_HOST", "localhost");
+        String port = valueOrDefault(env, "POSTGRES_PORT", "5432");
+        String name = valueOrDefault(env, "POSTGRES_NAME", "postgres");
+        // Timeouts stay well inside CloudFront's 30 second origin timeout so failures are reported as JSON.
+        String options = "connectTimeout=5&socketTimeout=20";
+        // Aurora requires SSL; the local PostgreSQL runs without it.
+        if (!"true".equals(env.get("IS_LOCAL"))) {
+            options += "&sslmode=require";
+        }
+        return String.format("jdbc:postgresql://%s:%s/%s?%s", host, port, name, options);
+    }
+
+    /** Runs the work in a transaction: committed when it returns, rolled back when it throws. */
+    public synchronized <T> T run(SqlWork<T> work) {
+        try {
+            Connection current = connection();
+            try {
+                current.setAutoCommit(false);
+                T result = work.apply(current);
+                current.commit();
+                return result;
+            } catch (SQLException | RuntimeException e) {
+                current.rollback();
+                throw e;
+            } finally {
+                current.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            throw new StorageException("PostgreSQL operation failed: " + e.getMessage(), e);
+        }
+    }
+
+    private Connection connection() throws SQLException {
+        if (connection == null || !connection.isValid(2)) {
+            // The shaded jar drops the service files DriverManager relies on, so the driver is called directly.
+            connection = new Driver().connect(url, properties);
+            try (Statement statement = connection.createStatement()) {
+                for (String table : SCHEMA) {
+                    statement.execute(table);
+                }
+            }
+        }
+        return connection;
+    }
+
+    private static String valueOrDefault(Map<String, String> env, String key, String defaultValue) {
+        String value = env.get(key);
+        return value == null || value.isBlank() ? defaultValue : value.trim();
+    }
+}
