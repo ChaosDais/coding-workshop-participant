@@ -10,7 +10,7 @@ import java.util.Properties;
 
 /**
  * Holds one PostgreSQL connection per Lambda instance, opened on first use and reopened when it has gone stale.
- * The tables are created on first connect, so a fresh database needs no setup.
+ * The tables are created or upgraded on first connect, so a fresh database needs no setup.
  */
 public class PostgresDatabase {
     private static final String[] SCHEMA = {
@@ -23,11 +23,12 @@ public class PostgresDatabase {
                 progress_time DOUBLE PRECISION NOT NULL,
                 manager TEXT NOT NULL,
                 budget NUMERIC NOT NULL,
-                status TEXT NOT NULL
+                status TEXT NOT NULL,
+                archived_at TIMESTAMPTZ
             )""",
             """
             CREATE TABLE IF NOT EXISTS milestones (
-                project_id TEXT NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+                project_id TEXT NOT NULL REFERENCES projects (id),
                 id TEXT NOT NULL,
                 sort_order INTEGER NOT NULL,
                 name TEXT NOT NULL,
@@ -36,6 +37,7 @@ public class PostgresDatabase {
                 progress_time DOUBLE PRECISION NOT NULL,
                 assigned_employees TEXT[] NOT NULL,
                 status TEXT NOT NULL,
+                archived_at TIMESTAMPTZ,
                 PRIMARY KEY (project_id, id)
             )""",
             """
@@ -46,6 +48,19 @@ public class PostgresDatabase {
                 details JSONB NOT NULL,
                 occurred_at TIMESTAMPTZ NOT NULL
             )""",
+            // Upgrades tables created before archiving existed; rows are archived, never deleted.
+            "ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ",
+            "ALTER TABLE milestones ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ",
+            // Older tables deleted milestones along with their project; now deleting a referenced project fails.
+            """
+            DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'milestones'::regclass
+                           AND conname = 'milestones_project_id_fkey' AND confdeltype = 'c') THEN
+                    ALTER TABLE milestones DROP CONSTRAINT milestones_project_id_fkey;
+                    ALTER TABLE milestones ADD CONSTRAINT milestones_project_id_fkey
+                        FOREIGN KEY (project_id) REFERENCES projects (id);
+                END IF;
+            END $$""",
     };
 
     /** Work done on the connection inside one transaction. */

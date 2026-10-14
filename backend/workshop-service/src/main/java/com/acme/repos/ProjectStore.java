@@ -5,18 +5,32 @@ import com.acme.models.Project;
 import java.util.List;
 import java.util.Optional;
 
-/** Where projects are kept; milestones are stored as part of their project. */
+/**
+ * Where projects are kept; milestones are stored as part of their project.
+ * Nothing is ever deleted: projects and milestones are archived instead and stay in the store.
+ */
 public interface ProjectStore {
-    /** Fails when a project with the same id already exists. */
+    /** Fails when a project with the same id already exists, archived or not. */
     void insert(Project project);
 
+    /** True when a project with this id exists, archived or not. */
+    boolean exists(String id);
+
+    /** The active project with its active milestones; empty when it does not exist or is archived. */
     Optional<Project> findById(String id);
 
-    /** Ordered by start date, then name. */
-    List<Project> findAll();
+    /** Active or archived projects, ordered by start date, then name, each with its active milestones. */
+    List<Project> findAll(boolean archived);
 
-    /** Replaces the stored project including its milestones; returns false when the id does not exist. */
+    /**
+     * Replaces an active project's fields and milestones. Milestones missing from the new list are archived,
+     * not deleted. Returns false when there is no active project with this id.
+     */
     boolean replace(Project project);
 
-    boolean deleteById(String id);
+    /** Returns false when there is no active project with this id. */
+    boolean archive(String id);
+
+    /** Makes an archived project active again; returns false when there is no archived project with this id. */
+    boolean restore(String id);
 }

@@ -1,4 +1,4 @@
-package com.acme.services;
+package com.acme.audit;
 
 import com.acme.models.AuditEntry;
 import com.acme.repos.AuditStore;

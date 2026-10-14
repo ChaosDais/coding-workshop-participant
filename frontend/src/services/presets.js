@@ -34,6 +34,13 @@ export const PRESETS = [
     id: 'list-projects', group: 'Projects', label: 'List projects', method: 'GET', path: '/projects',
   },
   {
+    id: 'list-archived-projects',
+    group: 'Projects',
+    label: 'List archived projects',
+    method: 'GET',
+    path: '/projects?archived=true',
+  },
+  {
     id: 'create-project',
     group: 'Projects',
     label: 'Create project',
@@ -54,7 +61,14 @@ export const PRESETS = [
     body: json({ ...sampleProject, name: 'Apollo (updated)', status: 'IN_PROGRESS' }),
   },
   {
-    id: 'delete-project', group: 'Projects', label: 'Delete project', method: 'DELETE', path: '/projects/{projectId}',
+    id: 'archive-project', group: 'Projects', label: 'Archive project', method: 'DELETE', path: '/projects/{projectId}',
+  },
+  {
+    id: 'restore-project',
+    group: 'Projects',
+    label: 'Restore project',
+    method: 'POST',
+    path: '/projects/{projectId}/restore',
   },
   {
     id: 'add-milestone',
@@ -74,9 +88,9 @@ export const PRESETS = [
     body: json({ ...sampleMilestone, status: 'COMPLETE' }),
   },
   {
-    id: 'delete-milestone',
+    id: 'archive-milestone',
     group: 'Milestones',
-    label: 'Delete milestone',
+    label: 'Archive milestone',
     method: 'DELETE',
     path: '/projects/{projectId}/milestones/{milestoneId}',
   },
