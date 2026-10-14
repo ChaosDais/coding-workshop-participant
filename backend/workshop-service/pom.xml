@@ -72,11 +72,6 @@
             <version>42.7.12</version>
         </dependency>
 
-        <dependency>
-            <groupId>org.mongodb</groupId>
-            <artifactId>mongodb-driver-sync</artifactId>
-            <!-- Version comes from spring-boot-dependencies so it matches mongodb-driver-core and bson. -->
-        </dependency>
 
         <dependency>
             <groupId>org.junit.jupiter</groupId>
