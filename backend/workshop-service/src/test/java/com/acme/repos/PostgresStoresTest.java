@@ -5,6 +5,8 @@ import com.acme.models.AuditEntry;
 import com.acme.models.CompletionStatus;
 import com.acme.models.Milestone;
 import com.acme.models.Project;
+import com.acme.models.Role;
+import com.acme.models.User;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
@@ -14,6 +16,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -104,6 +107,72 @@ class PostgresStoresTest {
                 AuditStore reopened = new PostgresAuditStore(new PostgresDatabase(
                         url + (url.contains("?") ? "&" : "?") + "currentSchema=" + schema, null, null));
                 assertEquals(List.of(entry), reopened.findRecent(10));
+            } finally {
+                statement.execute("DROP SCHEMA " + schema + " CASCADE");
+            }
+        }
+    }
+
+    /** Accounts, refresh tokens and settings round-trip through PostgreSQL; nothing is ever deleted. */
+    @Test
+    void usersTokensAndSettingsRoundTripThroughPostgres() throws SQLException {
+        String url = System.getenv("POSTGRES_TEST_URL");
+        Assumptions.assumeTrue(url != null && !url.isBlank(), "POSTGRES_TEST_URL is not set");
+
+        String schema = "workshop_test_" + UUID.randomUUID().toString().replace("-", "");
+        try (Connection admin = DriverManager.getConnection(url); Statement statement = admin.createStatement()) {
+            statement.execute("CREATE SCHEMA " + schema);
+            try {
+                PostgresDatabase database = new PostgresDatabase(
+                        url + (url.contains("?") ? "&" : "?") + "currentSchema=" + schema, null, null);
+                UserStore users = new PostgresUserStore(database);
+
+                User boss = new User("u1", "Boss@Example.com", "Boss", Role.ADMIN, null, false);
+                User manager = new User("u2", "manager@example.com", "Manager", Role.MANAGER, null, false);
+                User employee = new User("u3", "employee@example.com", "Employee", Role.EMPLOYEE, "u2", false);
+                assertTrue(users.insertIfEmpty(boss, "hash-1"));
+                assertFalse(users.insertIfEmpty(manager, "hash-2"));
+                users.insert(manager, "hash-2");
+                users.insert(employee, "hash-3");
+                assertThrows(ConflictException.class, () -> users.insert(
+                        new User("u4", "MANAGER@example.com", "Dup", Role.EMPLOYEE, null, false), "h"));
+
+                assertEquals(boss, users.findById("u1").orElseThrow());
+                assertEquals("hash-1", users.findByEmail("boss@example.com").orElseThrow().passwordHash());
+                assertEquals(List.of(boss, employee, manager), users.findAll(false));
+                assertEquals(1, users.countActive(Role.ADMIN));
+                assertEquals(1, users.countActiveEmployeesOf("u2"));
+
+                users.update(employee.withManager(null));
+                assertEquals(0, users.countActiveEmployeesOf("u2"));
+                assertThrows(ConflictException.class, () -> users.update(
+                        new User("u3", "boss@example.com", "Employee", Role.EMPLOYEE, null, false)));
+                users.setPasswordHash("u3", "hash-new");
+                assertEquals("hash-new", users.findByEmail("employee@example.com").orElseThrow().passwordHash());
+
+                assertTrue(users.archive("u3"));
+                assertFalse(users.archive("u3"));
+                assertTrue(users.findById("u3").orElseThrow().archived());
+                assertEquals(List.of("u3"), users.findAll(true).stream().map(User::id).toList());
+                assertTrue(users.restore("u3"));
+
+                RefreshTokenStore tokens = new PostgresRefreshTokenStore(database);
+                Instant expiry = Instant.parse("2026-10-21T12:00:00Z");
+                tokens.insert("token-hash", "u1", expiry);
+                tokens.insert("other-hash", "u1", expiry);
+                assertEquals(new RefreshTokenStore.RefreshToken("u1", expiry, false),
+                        tokens.find("token-hash").orElseThrow());
+                assertTrue(tokens.revoke("token-hash"));
+                assertFalse(tokens.revoke("token-hash"));
+                tokens.revokeAllFor("u1");
+                assertTrue(tokens.find("other-hash").orElseThrow().revoked());
+
+                SettingsStore settings = new PostgresSettingsStore(database);
+                assertEquals("first", settings.getOrCreate("secret", () -> "first"));
+                assertEquals("first", settings.getOrCreate("secret", () -> "second"));
+
+                assertEquals(3, count(admin, schema, "users"));
+                assertEquals(2, count(admin, schema, "refresh_tokens"));
             } finally {
                 statement.execute("DROP SCHEMA " + schema + " CASCADE");
             }

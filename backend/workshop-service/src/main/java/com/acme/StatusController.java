@@ -1,5 +1,6 @@
 package com.acme;
 
+import com.acme.http.Access;
 import com.acme.http.ApiResponse;
 import com.acme.http.Controller;
 import com.acme.http.Router;
@@ -12,6 +13,6 @@ public class StatusController implements Controller {
 
     @Override
     public void register(Router router) {
-        router.get("/", request -> ApiResponse.ok(Map.of("message", MESSAGE)));
+        router.get("/", Access.PUBLIC, request -> ApiResponse.ok(Map.of("message", MESSAGE)));
     }
 }

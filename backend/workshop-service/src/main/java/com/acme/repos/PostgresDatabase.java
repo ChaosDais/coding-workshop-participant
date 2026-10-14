@@ -48,6 +48,30 @@ public class PostgresDatabase {
                 details JSONB NOT NULL,
                 occurred_at TIMESTAMPTZ NOT NULL
             )""",
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                role TEXT NOT NULL,
+                manager_id TEXT REFERENCES users (id),
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                archived_at TIMESTAMPTZ
+            )""",
+            """
+            CREATE TABLE IF NOT EXISTS refresh_tokens (
+                token_hash TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users (id),
+                expires_at TIMESTAMPTZ NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                revoked_at TIMESTAMPTZ
+            )""",
+            """
+            CREATE TABLE IF NOT EXISTS app_settings (
+                name TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )""",
             // Upgrades tables created before archiving existed; rows are archived, never deleted.
             "ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ",
             "ALTER TABLE milestones ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ",

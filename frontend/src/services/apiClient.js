@@ -24,14 +24,14 @@ export function buildUrl(service, path) {
 }
 
 /**
- * Replaces {projectId} and {milestoneId} placeholders with the given ids.
- * Placeholders without a value are left in place so the URL visibly stays invalid.
- * @param {string} path Path template.
- * @param {{projectId: string, milestoneId: string}} ids Values to substitute.
- * @returns {string} Path with placeholders filled in.
+ * Replaces {name} placeholders, such as {projectId} or {refreshToken}, with the matching values.
+ * Placeholders without a value are left in place so the request visibly stays invalid.
+ * @param {string} text Path or body template.
+ * @param {Object<string, string>} values Values to substitute.
+ * @returns {string} Text with placeholders filled in.
  */
-export function fillPath(path, ids) {
-  return path.replace(/\{(projectId|milestoneId)\}/g, (placeholder, name) => ids[name] || placeholder);
+export function fillPlaceholders(text, values) {
+  return text.replace(/\{(\w+)\}/g, (placeholder, name) => values[name] || placeholder);
 }
 
 /**
@@ -49,21 +49,26 @@ export function parseJson(text) {
 
 /**
  * Sends one request and reports the outcome; network failures are returned, not thrown.
- * @param {{service: string, method: string, path: string, body: string}} request Request to send.
+ * @param {{service: string, method: string, path: string, body: string, accessToken?: string}} request
+ *   Request to send; an access token is sent as a bearer token.
  * @returns {Promise<{url: string, status: number, statusText: string, ok: boolean,
  *   durationMs: number, body: string, error?: string}>} Raw result.
  */
 export async function sendRequest({
-  service, method, path, body,
+  service, method, path, body, accessToken,
 }) {
   const url = buildUrl(service, path);
   const hasBody = Boolean(body && body.trim()) && !['GET', 'HEAD'].includes(method);
+  const headers = {
+    ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+  };
   const startedAt = performance.now();
 
   try {
     const response = await fetch(url, {
       method,
-      headers: hasBody ? { 'Content-Type': 'application/json' } : {},
+      headers,
       body: hasBody ? body : undefined,
     });
     return {

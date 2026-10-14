@@ -2,7 +2,9 @@ package com.acme;
 
 import com.acme.config.AppConfig;
 import com.acme.errors.ConflictException;
+import com.acme.errors.ForbiddenException;
 import com.acme.errors.NotFoundException;
+import com.acme.errors.UnauthorizedException;
 import com.acme.http.ApiException;
 import com.acme.http.ApiRequest;
 import com.acme.http.ApiResponse;
@@ -44,6 +46,10 @@ public class Handler implements RequestHandler<Map<String, Object>, Map<String, 
             return ApiResponse.error(404, e.getMessage());
         } catch (ConflictException e) {
             return ApiResponse.error(409, e.getMessage());
+        } catch (UnauthorizedException e) {
+            return ApiResponse.error(401, e.getMessage());
+        } catch (ForbiddenException e) {
+            return ApiResponse.error(403, e.getMessage());
         } catch (IllegalArgumentException e) {
             // Thrown by the model constructors when a field is invalid.
             return ApiResponse.error(400, e.getMessage());

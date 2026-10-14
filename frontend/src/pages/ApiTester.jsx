@@ -3,9 +3,9 @@ import PresetList from '../components/PresetList.jsx';
 import RequestForm from '../components/RequestForm.jsx';
 import ResponsePanel from '../components/ResponsePanel.jsx';
 import {
-  buildUrl, fillPath, getServiceNames, parseJson, sendRequest,
+  buildUrl, fillPlaceholders, getServiceNames, parseJson, sendRequest,
 } from '../services/apiClient.js';
-import { PRESETS } from '../services/presets.js';
+import { PRESETS, VALUE_FIELDS } from '../services/presets.js';
 
 const DEFAULT_SERVICE = 'workshop-service';
 
@@ -19,12 +19,14 @@ function ApiTester() {
   const [request, setRequest] = useState({
     service: DEFAULT_SERVICE, method: PRESETS[0].method, path: PRESETS[0].path, body: '',
   });
-  const [ids, setIds] = useState({ projectId: '', milestoneId: '' });
+  const [values, setValues] = useState(
+    Object.fromEntries(VALUE_FIELDS.map((field) => [field.name, ''])),
+  );
   const [activePreset, setActivePreset] = useState(PRESETS[0]);
   const [response, setResponse] = useState();
   const [sending, setSending] = useState(false);
 
-  const resolvedPath = fillPath(request.path, ids);
+  const resolvedPath = fillPlaceholders(request.path, values);
 
   const updateRequest = (field, value) => {
     setRequest((current) => ({ ...current, [field]: value }));
@@ -42,13 +44,22 @@ function ApiTester() {
 
   const send = async () => {
     setSending(true);
-    const result = await sendRequest({ ...request, path: resolvedPath });
+    const result = await sendRequest({
+      ...request,
+      path: resolvedPath,
+      body: fillPlaceholders(request.body, values),
+      accessToken: values.accessToken,
+    });
     setResponse(result);
     setSending(false);
 
-    const createdId = result.ok && activePreset?.captures ? parseJson(result.body)?.id : undefined;
-    if (createdId) {
-      setIds((current) => ({ ...current, [activePreset.captures]: createdId }));
+    // Presets name the response fields to remember, e.g. the new project's id or the tokens from sign-in.
+    const parsed = result.ok && activePreset?.capture ? parseJson(result.body) : undefined;
+    if (parsed) {
+      const captured = Object.entries(activePreset.capture)
+        .filter(([, field]) => typeof parsed[field] === 'string')
+        .map(([name, field]) => [name, parsed[field]]);
+      setValues((current) => ({ ...current, ...Object.fromEntries(captured) }));
     }
   };
 
@@ -60,12 +71,13 @@ function ApiTester() {
         <div className="panels">
           <RequestForm
             request={request}
-            ids={ids}
+            fields={VALUE_FIELDS}
+            values={values}
             serviceNames={serviceNames}
             url={buildUrl(request.service, resolvedPath)}
             sending={sending}
             onChange={updateRequest}
-            onIdChange={(name, value) => setIds((current) => ({ ...current, [name]: value }))}
+            onValueChange={(name, value) => setValues((current) => ({ ...current, [name]: value }))}
             onSend={send}
           />
           <ResponsePanel response={response} />

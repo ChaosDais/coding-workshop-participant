@@ -14,6 +14,16 @@ final class Checks {
         return value.trim();
     }
 
+    // Validate email addresses; stored lowercased so lookups ignore case
+    static String email(String value) {
+        String email = text(value, "email").toLowerCase();
+        int at = email.indexOf('@');
+        if (at <= 0 || at != email.lastIndexOf('@') || at == email.length() - 1 || email.contains(" ")) {
+            throw new IllegalArgumentException("email must be a valid email address");
+        }
+        return email;
+    }
+
     // Validate date ranges
     static void dateRange(LocalDate start, LocalDate end) {
         if (start == null || end == null) {

@@ -1,9 +1,24 @@
+/**
+ * Values the tester remembers between requests and substitutes into {name} placeholders in paths and bodies.
+ * accessToken is also sent as the bearer token on every request.
+ */
+export const VALUE_FIELDS = [
+  { name: 'accessToken', label: 'Access token', hint: 'filled in after Sign in' },
+  { name: 'refreshToken', label: 'Refresh token', hint: 'filled in after Sign in' },
+  { name: 'managerId', label: 'Manager id', hint: 'filled in after Create manager' },
+  { name: 'employeeId', label: 'Employee id', hint: 'filled in after Create employee' },
+  { name: 'projectId', label: 'Project id', hint: 'filled in after Create project' },
+  { name: 'milestoneId', label: 'Milestone id', hint: 'filled in after Add milestone' },
+];
+
+const admin = { email: 'admin@example.com', password: 'change-me-now' };
+
 const sampleProject = {
   name: 'Apollo',
   startDate: '2026-01-01',
   endDate: '2026-12-31',
   progressTime: 12.5,
-  manager: 'alice',
+  manager: '{managerId}',
   budget: 50000.75,
   status: 'TODO',
 };
@@ -13,15 +28,17 @@ const sampleMilestone = {
   startDate: '2026-01-01',
   endDate: '2026-02-01',
   progressTime: 4,
-  assignedEmployees: ['bob', 'carol'],
+  assignedEmployees: ['{employeeId}'],
   status: 'IN_PROGRESS',
 };
 
 const json = (value) => JSON.stringify(value, null, 2);
 
+const signInCapture = { accessToken: 'accessToken', refreshToken: 'refreshToken' };
+
 /**
- * Ready-made requests. "captures" names the id field that is remembered from a
- * successful response so follow-up presets can use it.
+ * Ready-made requests. "capture" maps a remembered value to the response field it is taken from
+ * after a successful response, so follow-up presets can use it.
  */
 export const PRESETS = [
   {
@@ -29,6 +46,141 @@ export const PRESETS = [
   },
   {
     id: 'audit', group: 'General', label: 'View audit log', method: 'GET', path: '/audit',
+  },
+  {
+    id: 'setup',
+    group: 'Sign-in',
+    label: 'Create first admin',
+    method: 'POST',
+    path: '/auth/setup',
+    body: json({ ...admin, name: 'Ada Admin' }),
+  },
+  {
+    id: 'login',
+    group: 'Sign-in',
+    label: 'Sign in as admin',
+    method: 'POST',
+    path: '/auth/login',
+    body: json(admin),
+    capture: signInCapture,
+  },
+  {
+    id: 'login-employee',
+    group: 'Sign-in',
+    label: 'Sign in as employee',
+    method: 'POST',
+    path: '/auth/login',
+    body: json({ email: 'employee@example.com', password: 'employee-pass' }),
+    capture: signInCapture,
+  },
+  {
+    id: 'me', group: 'Sign-in', label: 'Who am I', method: 'GET', path: '/auth/me',
+  },
+  {
+    id: 'refresh',
+    group: 'Sign-in',
+    label: 'Refresh tokens',
+    method: 'POST',
+    path: '/auth/refresh',
+    body: json({ refreshToken: '{refreshToken}' }),
+    capture: signInCapture,
+  },
+  {
+    id: 'change-password',
+    group: 'Sign-in',
+    label: 'Change my password',
+    method: 'POST',
+    path: '/auth/password',
+    body: json({ currentPassword: admin.password, newPassword: 'a-new-password' }),
+  },
+  {
+    id: 'logout',
+    group: 'Sign-in',
+    label: 'Sign out',
+    method: 'POST',
+    path: '/auth/logout',
+    body: json({ refreshToken: '{refreshToken}' }),
+  },
+  {
+    id: 'list-users', group: 'Users', label: 'List users', method: 'GET', path: '/users',
+  },
+  {
+    id: 'list-archived-users', group: 'Users', label: 'List archived users', method: 'GET', path: '/users?archived=true',
+  },
+  {
+    id: 'create-manager',
+    group: 'Users',
+    label: 'Create manager',
+    method: 'POST',
+    path: '/users',
+    body: json({
+      email: 'manager@example.com', name: 'Morgan Manager', role: 'MANAGER', password: 'manager-pass',
+    }),
+    capture: { managerId: 'id' },
+  },
+  {
+    id: 'create-employee',
+    group: 'Users',
+    label: 'Create employee',
+    method: 'POST',
+    path: '/users',
+    body: json({
+      email: 'employee@example.com',
+      name: 'Eli Employee',
+      role: 'EMPLOYEE',
+      managerId: '{managerId}',
+      password: 'employee-pass',
+    }),
+    capture: { employeeId: 'id' },
+  },
+  {
+    id: 'create-admin',
+    group: 'Users',
+    label: 'Create another admin',
+    method: 'POST',
+    path: '/users',
+    body: json({
+      email: 'second-admin@example.com', name: 'Sam Admin', role: 'ADMIN', password: 'second-admin-pass',
+    }),
+  },
+  {
+    id: 'get-employee', group: 'Users', label: 'Get employee', method: 'GET', path: '/users/{employeeId}',
+  },
+  {
+    id: 'update-employee',
+    group: 'Users',
+    label: 'Update employee',
+    method: 'PUT',
+    path: '/users/{employeeId}',
+    body: json({
+      email: 'employee@example.com', name: 'Eli Employee (renamed)', role: 'EMPLOYEE', managerId: '{managerId}',
+    }),
+  },
+  {
+    id: 'move-employee',
+    group: 'Users',
+    label: 'Move employee to manager',
+    method: 'PUT',
+    path: '/users/{employeeId}/manager',
+    body: json({ managerId: '{managerId}' }),
+  },
+  {
+    id: 'reset-password',
+    group: 'Users',
+    label: 'Reset employee password',
+    method: 'PUT',
+    path: '/users/{employeeId}/password',
+    body: json({ password: 'employee-pass' }),
+  },
+  {
+    id: 'archive-employee', group: 'Users', label: 'Archive employee', method: 'DELETE', path: '/users/{employeeId}',
+  },
+  {
+    id: 'restore-employee',
+    group: 'Users',
+    label: 'Restore employee',
+    method: 'POST',
+    path: '/users/{employeeId}/restore',
   },
   {
     id: 'list-projects', group: 'Projects', label: 'List projects', method: 'GET', path: '/projects',
@@ -47,7 +199,7 @@ export const PRESETS = [
     method: 'POST',
     path: '/projects',
     body: json(sampleProject),
-    captures: 'projectId',
+    capture: { projectId: 'id' },
   },
   {
     id: 'get-project', group: 'Projects', label: 'Get project', method: 'GET', path: '/projects/{projectId}',
@@ -77,7 +229,7 @@ export const PRESETS = [
     method: 'POST',
     path: '/projects/{projectId}/milestones',
     body: json(sampleMilestone),
-    captures: 'milestoneId',
+    capture: { milestoneId: 'id' },
   },
   {
     id: 'update-milestone',

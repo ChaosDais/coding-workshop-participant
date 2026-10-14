@@ -1,5 +1,7 @@
 package com.acme.http;
 
+import com.acme.models.User;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import java.nio.charset.StandardCharsets;
@@ -14,14 +16,17 @@ import java.util.Map;
  *
  * @param segments path split on slashes, without the /api/{service} prefix that requests through CloudFront carry
  * @param query    query string parameters, such as archived=true
+ * @param headers  request headers, with lowercase names
  * @param params   values of the {placeholders} in the matched route
+ * @param user     the signed-in user, or null on a public route
  */
 public record ApiRequest(String method, List<String> segments, Map<String, String> query,
-                         Map<String, String> params, String body) {
+                         Map<String, String> headers, Map<String, String> params, String body, User user) {
 
     public static ApiRequest fromEvent(Map<String, Object> event) {
         Map<String, Object> request = event == null ? Map.of() : event;
-        return new ApiRequest(method(request), segments(request), query(request), Map.of(), body(request));
+        return new ApiRequest(method(request), segments(request), query(request), headers(request), Map.of(),
+                body(request), null);
     }
 
     public String path() {
@@ -31,6 +36,23 @@ public record ApiRequest(String method, List<String> segments, Map<String, Strin
     /** A query string parameter, or null when it is absent. */
     public String query(String name) {
         return query.get(name);
+    }
+
+    /** A true/false query string parameter; absent means false. */
+    public boolean booleanQuery(String name) {
+        String value = query(name);
+        if (value == null || value.equals("false")) {
+            return false;
+        }
+        if (value.equals("true")) {
+            return true;
+        }
+        throw new ApiException(400, name + " must be true or false");
+    }
+
+    /** A request header, looked up case-insensitively, or null when it is absent. */
+    public String header(String name) {
+        return headers.get(name.toLowerCase());
     }
 
     public String param(String name) {
@@ -45,8 +67,18 @@ public record ApiRequest(String method, List<String> segments, Map<String, Strin
         return Json.convert(json(), type);
     }
 
+    /** A string field of the JSON body, or null when it is absent or not a string. */
+    public String field(String name) {
+        JsonElement value = json().get(name);
+        return value != null && value.isJsonPrimitive() ? value.getAsString() : null;
+    }
+
     ApiRequest withParams(Map<String, String> routeParams) {
-        return new ApiRequest(method, segments, query, routeParams, body);
+        return new ApiRequest(method, segments, query, headers, routeParams, body, user);
+    }
+
+    ApiRequest withUser(User signedIn) {
+        return new ApiRequest(method, segments, query, headers, params, body, signedIn);
     }
 
     /** Function URL events carry the method under requestContext.http; a direct invocation counts as GET. */
@@ -73,6 +105,14 @@ public record ApiRequest(String method, List<String> segments, Map<String, Strin
             parameters.forEach((key, value) -> query.put(String.valueOf(key), String.valueOf(value)));
         }
         return query;
+    }
+
+    private static Map<String, String> headers(Map<String, Object> request) {
+        Map<String, String> headers = new HashMap<>();
+        if (request.get("headers") instanceof Map<?, ?> values) {
+            values.forEach((key, value) -> headers.put(String.valueOf(key).toLowerCase(), String.valueOf(value)));
+        }
+        return headers;
     }
 
     private static String body(Map<String, Object> request) {
