@@ -347,9 +347,38 @@ class EmployeeTest {
     }
 
     @Test
-    void onlyEmployeesLogTimeAndEmployeesCannotChangeAnythingElse() {
-        assertEquals(403, status(app.send("POST", milestonePath(milestoneId) + "/time", "{\"hours\": 1}", adminToken)));
-        assertEquals(403, status(app.send("POST", milestonePath(milestoneId) + "/timer", null, managerToken)));
+    void adminsAndManagersLogTheirOwnTimeWhereTheyMay() {
+        // Admins anywhere; a manager on the projects they manage, whether or not they are assigned.
+        assertEquals(201, status(app.send("POST", milestonePath(milestoneId) + "/time", "{\"hours\": 1}", adminToken)));
+        assertEquals(201, status(app.send("POST", milestonePath(teammateMilestoneId) + "/timer", null, managerToken)));
+        assertEquals(200, status(app.send("POST", "/timer/stop", null, managerToken)));
+        List<String> loggers = body(app.send("GET", milestonePath(milestoneId) + "/time", null, adminToken))
+                .getAsJsonArray().asList().stream()
+                .map(entry -> entry.getAsJsonObject().get("userId").getAsString()).toList();
+        assertEquals(1, loggers.size());
+        assertTrue(!loggers.contains(employeeId));
+
+        String otherManagerToken = app.signIn("other-manager@example.com", PASSWORD).get("accessToken").getAsString();
+        assertEquals("You can only log time on projects you manage", error(app.send("POST",
+                milestonePath(milestoneId) + "/time", "{\"hours\": 1}", otherManagerToken)));
+    }
+
+    @Test
+    void employeesNoLongerSeeProjectsOnceTheyAreComplete() {
+        assertEquals(200, status(app.send("PUT", milestonePath(milestoneId) + "/status", "{\"status\": \"COMPLETE\"}",
+                adminToken)));
+        assertEquals(200, status(app.send("PUT", milestonePath(teammateMilestoneId) + "/status",
+                "{\"status\": \"COMPLETE\"}", adminToken)));
+        assertEquals(200, status(app.send("PUT", "/projects/" + projectId, """
+                {"name": "Apollo", "startDate": "2026-01-01", "endDate": "2026-12-31", "manager": "%s",
+                 "budget": 5000, "status": "COMPLETE"}""".formatted(managerId), adminToken)));
+
+        assertEquals(0, body(send("GET", "/projects", null)).getAsJsonArray().size());
+        assertEquals(403, status(send("GET", "/projects/" + projectId, null)));
+    }
+
+    @Test
+    void employeesCannotChangeAnythingElse() {
 
         List<String[]> denied = List.of(
                 new String[] {"POST", "/projects"}, new String[] {"PUT", "/projects/" + projectId},

@@ -8,6 +8,7 @@ import {
 import userEvent from '@testing-library/user-event';
 import { AuthProvider } from '../auth/AuthContext.jsx';
 import ProjectDetailPage from './ProjectDetailPage.jsx';
+import { TimerProvider } from '../timer/TimerContext.jsx';
 import { setSession } from '../services/api.js';
 import { fakeBackend } from '../test/fakeBackend.js';
 
@@ -52,7 +53,7 @@ afterEach(cleanup);
 
 describe('project view', () => {
   it('shows the description, money, dependencies and availability', async () => {
-    render(<AuthProvider><ProjectDetailPage projectId="p1" /></AuthProvider>);
+    render(<AuthProvider><TimerProvider><ProjectDetailPage projectId="p1" /></TimerProvider></AuthProvider>);
     expect(await screen.findByText('Crewed lunar landing')).toBeTruthy();
     expect(screen.getByText('$125.50')).toBeTruthy();
     expect(screen.getByText('Blocked by Mercury')).toBeTruthy();
@@ -60,7 +61,7 @@ describe('project view', () => {
   });
 
   it('lists milestones with assignees and what they wait for', async () => {
-    render(<AuthProvider><ProjectDetailPage projectId="p1" /></AuthProvider>);
+    render(<AuthProvider><TimerProvider><ProjectDetailPage projectId="p1" /></TimerProvider></AuthProvider>);
     const design = (await screen.findByText('Design', { selector: 'strong' })).closest('tr');
     expect(within(design).getByText('Eli Employee')).toBeTruthy();
     const build = screen.getByText('Build', { selector: 'strong' }).closest('tr');
@@ -68,7 +69,7 @@ describe('project view', () => {
   });
 
   it('shows archived milestones on request', async () => {
-    render(<AuthProvider><ProjectDetailPage projectId="p1" /></AuthProvider>);
+    render(<AuthProvider><TimerProvider><ProjectDetailPage projectId="p1" /></TimerProvider></AuthProvider>);
     await screen.findByText('Design', { selector: 'strong' });
     expect(screen.queryByText('Kickoff')).toBeNull();
     await userEvent.click(screen.getByLabelText('Show archived milestones'));
@@ -76,7 +77,7 @@ describe('project view', () => {
   });
 
   it('shows the project history, narrowed to a milestone on request', async () => {
-    render(<AuthProvider><ProjectDetailPage projectId="p1" /></AuthProvider>);
+    render(<AuthProvider><TimerProvider><ProjectDetailPage projectId="p1" /></TimerProvider></AuthProvider>);
     expect(await screen.findByText('Project created')).toBeTruthy();
     const design = screen.getByText('Design', { selector: 'strong' }).closest('tr');
     await userEvent.click(within(design).getByRole('button', { name: 'History' }));

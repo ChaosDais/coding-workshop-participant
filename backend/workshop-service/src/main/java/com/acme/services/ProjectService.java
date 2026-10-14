@@ -30,7 +30,7 @@ import java.util.Set;
  *   <li>Admins can see and change every project, including archived ones.</li>
  *   <li>Managers can see and change only the active projects they manage, but cannot hand a project to another
  *       manager or change its description.</li>
- *   <li>Employees can see only the active projects where they are assigned to a milestone, with all of that
+ *   <li>Employees can see only the active, unfinished projects where they are assigned to a milestone, with all of that
  *       project's milestones; the one change they can make is moving one of their own milestones to
  *       AWAITING_REVIEW.</li>
  * </ul>
@@ -120,7 +120,8 @@ public class ProjectService {
         return switch (actor.role()) {
             case ADMIN -> true;
             case MANAGER -> actor.id().equals(project.manager());
-            case EMPLOYEE -> project.milestones().stream()
+            // Employees see only the projects they currently work on: not completed ones.
+            case EMPLOYEE -> project.status() != CompletionStatus.COMPLETE && project.milestones().stream()
                     .anyMatch(milestone -> milestone.assignedEmployees().contains(actor.id()));
         };
     }

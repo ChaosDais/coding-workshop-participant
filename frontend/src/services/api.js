@@ -164,6 +164,27 @@ export const auth = {
   },
 };
 
+export const timeApi = {
+  /** Logs hours worked on a milestone by hand: 0 < hours <= 24. */
+  log: (projectId, milestoneId, hours, note) => request('POST',
+    `/projects/${projectId}/milestones/${milestoneId}/time`, { hours, note: note || undefined }),
+  /** Time logged on a milestone: everyone's for admins and managers, your own for employees. */
+  list: (projectId, milestoneId) => request('GET', `/projects/${projectId}/milestones/${milestoneId}/time`),
+  /** Your running timer, or undefined when none runs. */
+  async current() {
+    try {
+      return await request('GET', '/timer');
+    } catch (error) {
+      if (error.status === 404) {
+        return undefined;
+      }
+      throw error;
+    }
+  },
+  start: (projectId, milestoneId) => request('POST', `/projects/${projectId}/milestones/${milestoneId}/timer`),
+  stop: () => request('POST', '/timer/stop'),
+};
+
 export const settingsApi = {
   bottlenecks: () => request('GET', '/settings/bottlenecks'),
   updateBottlenecks: (thresholds) => request('PUT', '/settings/bottlenecks', thresholds),

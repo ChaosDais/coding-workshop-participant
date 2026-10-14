@@ -25,8 +25,7 @@ above all who may do what.
 
 The backend is a single Java service, `workshop-service`, deployed as one AWS Lambda function. Every API path is
 handled by the same function, which routes internally. Data lives in PostgreSQL. The frontend is a React app
-with a sign-in screen and the admin and manager views; the employee view is still to come, and a developer API
-tester remains at `#/tester`.
+with a sign-in screen and admin, manager and employee views, and a developer API tester remains at `#/tester`.
 
 ```mermaid
 flowchart LR
@@ -81,12 +80,14 @@ frontend/
   src/App.jsx                       chooses the screen from the signed-in user and the #/ route
   src/auth/AuthContext.jsx          signed-in user, sign-in/out, password change, token renewal
   src/pages/                        SignIn, ChangePassword (forced change only), Options (tabs: Account,
-                                    Appearance, System for admins), Projects and ProjectDetail (admins and managers),
-                                    Employees and AuditLog (admins), Team (managers), OtherRole (placeholder
-                                    for employees), ApiTester (#/tester)
+                                    Appearance, System for admins), Projects and ProjectDetail (every role;
+                                    employees get a reduced view), Employees and AuditLog (admins), Team
+                                    (managers), ApiTester (#/tester)
+  src/timer/TimerContext.jsx        the signed-in user's running timer, shared by the timer bar and project view
   src/components/                   NavBar, forms (Project, Milestone, User, ResetPassword), Modal, Field,
                                     AuditTable, AssigneeList, HoursProgress (completion %), StatusAge,
-                                    StatusBadge, ErrorMessage; PresetList, RequestForm, ResponsePanel and
+                                    StatusBadge, ErrorMessage, TimerBar (ticking clock under the nav bar),
+                                    LogTimeForm, TimeEntries; PresetList, RequestForm, ResponsePanel and
                                     TimerPanel belong to the tester
   src/services/api.js               API client: session storage, bearer token, refresh-and-retry on 401
   src/utils/                        formatting, project availability, audit descriptions, user search,
@@ -228,9 +229,9 @@ Authorization happens in two layers, so a missing check in one is caught by the 
 | `POST /projects/{id}/milestones/{mid}/assignees/{employeeId}/move` | ✓ | scoped | — | — |
 | `PUT /projects/{id}/milestones/{mid}/status` | ✓ | scoped | own milestones, `AWAITING_REVIEW` only | — |
 | `DELETE /projects/{id}/milestones/{mid}` (archive) | ✓ | scoped | — | — |
-| `POST /projects/{id}/milestones/{mid}/time` | — | — | own milestones | — |
-| `POST /projects/{id}/milestones/{mid}/timer` | — | — | own milestones | — |
-| `GET /timer`, `POST /timer/stop` | — | — | own timer | — |
+| `POST /projects/{id}/milestones/{mid}/time` | ✓ | scoped | own milestones | — |
+| `POST /projects/{id}/milestones/{mid}/timer` | ✓ | scoped | own milestones | — |
+| `GET /timer`, `POST /timer/stop` | own timer | own timer | own timer | — |
 | `GET /projects/{id}/milestones/{mid}/time` | ✓ | scoped | own entries on own milestones | — |
 | `PUT /time/{id}` (correct an entry) | ✓ | — | — | — |
 | `GET /audit` | ✓ | — | — | — |
@@ -243,12 +244,12 @@ A missing or invalid token returns `401`; a signed-in user without permission ge
 
 | | Manager | Employee |
 |---|---|---|
-| Projects visible | Active projects they manage | Active projects where they are assigned to at least one milestone |
+| Projects visible | Active projects they manage | Active, not COMPLETE projects where they are assigned to at least one milestone |
 | Milestones visible | All in their projects | All in those projects |
 | Users visible | Active employees whose manager they are | Their manager, and active employees sharing that manager (themselves included) |
 | Project changes | Everything except `manager`, `description` and `dependsOn`; cannot create, archive or restore | None |
 | Milestone changes | Add, edit, archive and set any status in their projects | Only `AWAITING_REVIEW`, only on milestones assigned to them, never on a COMPLETE one |
-| Time | See hours logged on their projects | Log time and run a timer on their own milestones; see their own entries |
+| Time | Log their own time and run a timer on any milestone of their projects; see hours logged on them | Log time and run a timer on their own milestones; see their own entries |
 | Archived records | Not visible | Not visible |
 
 ### Field visibility
@@ -311,17 +312,19 @@ Checked in `services/ProjectService.java`, since they span projects:
   on cannot be archived.
 
 ### Time and cost
-- Employees log hours by hand (more than 0, at most 24 per entry) or with a timer.
-- **One milestone at a time**: one running timer per employee, enforced by the database, and no manual hours
+- Every role logs **their own** hours, by hand (more than 0, at most 24 per entry) or with a timer. Nobody logs
+  time on someone else's behalf; admins correct entries instead.
+- **One milestone at a time**: one running timer per user, enforced by the database, and no manual hours
   while a timer runs.
 - **8-hour cap**: a timer covers at most one workday. A timer stopped late logs 8.00 hours. A forgotten timer is
   closed at 8 hours the next time its owner looks at, starts or logs time (audited as `timer_capped`).
-- **Where time can be logged**: only on milestones the employee is assigned to, that are not COMPLETE, whose
+- **Where time can be logged**: admins on any milestone, managers on milestones of projects they manage, employees
+  only on milestones they are assigned to; in every case only on milestones that are not COMPLETE, whose
   dependencies are all complete, and whose project's dependencies are all complete.
 - **Progress**: logged hours are added to the milestone's `progressTime` inside the database, in the same
   transaction as the entry, so concurrent requests cannot lose hours.
 - **Cost**: hours × hourly rate, where hourly rate = annual salary ÷ 2,080 (40 hours × 52 weeks). The rate is
-  captured on each entry, so later pay changes do not alter past cost. An employee without a salary costs 0.
+  captured on each entry, so later pay changes do not alter past cost. A user without a salary costs 0.
 - **Corrections**: an admin can correct an entry's hours (0 to 24, where 0 voids it) with a required reason. The
   cost is recalculated at the original rate, the milestone's progress moves by the difference, and the previous
   values go to the audit log. Two admins correcting the same entry at once cannot overwrite each other.
@@ -400,7 +403,7 @@ cd frontend && npm test
 | `PostgresRepositoriesTest` | Every PostgreSQL repository, plus schema upgrades from earlier versions |
 | `PostgresDatabaseTest` | Retrying the connection while a paused Aurora database resumes |
 | `utils/*.test.js`, `services/*.test.js` | Frontend helpers: availability, search, validation, audit text, timer maths |
-| `pages/*.test.jsx` | Frontend screens rendered against a fake backend: sign-in and the forced password change, projects, project view, employees, the manager view |
+| `pages/*.test.jsx` | Frontend screens rendered against a fake backend: sign-in and the forced password change, projects, project view, employees, the manager view, the employee view (logging time, the ticking timer) |
 
 `TestApp` wires the whole service with in-memory repositories and a controllable clock, and calls it through the Lambda
 entry point with function-URL-shaped events, so the API tests exercise routing and authorization exactly as
@@ -424,10 +427,9 @@ deployed.
 - **Signing secret**: the token signing secret is stored in the database, so read access to the database would
   allow forging tokens.
 - **Not atomic**: a change and its audit entry are written in separate transactions.
-- **Frontend**: the employee view does not exist yet; employees see a placeholder.
 - **CloudFront 404s**: on AWS, CloudFront hides API 404s (see [Errors](#errors)).
-- **Memory**: the Lambda runs with 128 MB, the minimum, and BCrypt makes sign-in CPU-heavy. Raise `memory_size` in
-  `infra/lambda.tf` if sign-in is slow.
+- **Memory**: the Lambda runs with 512 MB; BCrypt makes sign-in CPU-heavy, so raise `memory_size` in
+  `infra/lambda.tf` if sign-in is still slow.
 - **Not yet built** (from the project notes):
   - planned hours per project;
   - weekly-hour (40 h) allocation checks and over-allocation reports;

@@ -6,6 +6,7 @@ import com.acme.errors.NotFoundException;
 import com.acme.models.CompletionStatus;
 import com.acme.models.Milestone;
 import com.acme.models.Project;
+import com.acme.models.Role;
 import com.acme.models.TimeEntry;
 import com.acme.models.User;
 import com.acme.repos.ProjectRepository;
@@ -24,11 +25,12 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Employees log time on milestones they are assigned to, either as a number of hours or with a timer; the
- * responses they get leave out pay figures, which only admins see.
+ * People log their own time on milestones, either as a number of hours or with a timer: employees on milestones
+ * they are assigned to, managers on the projects they manage, admins anywhere. The responses leave out pay
+ * figures, which only admins see in the time list.
  * Logged hours are added to the milestone's progress, and their cost (hours times the hourly rate derived from the
- * employee's annual salary) counts toward what the project has spent. Admins can correct logged hours.
- * An employee works toward one milestone at a time: only one timer can run, and hours cannot be entered by hand
+ * worker's annual salary) counts toward what the project has spent. Admins can correct logged hours.
+ * Each person works toward one milestone at a time: only one timer can run, and hours cannot be entered by hand
  * while it does, so the same time is never counted twice. A timer covers at most one 8-hour workday.
  */
 public class TimeService {
@@ -57,35 +59,35 @@ public class TimeService {
     }
 
     /** Logs hours entered by hand, rounded to two decimals; 0 < hours <= 24. */
-    public TimeEntry logHours(String projectId, String milestoneId, BigDecimal hours, String note, User employee) {
-        requireWorkable(projectId, milestoneId, employee);
+    public TimeEntry logHours(String projectId, String milestoneId, BigDecimal hours, String note, User worker) {
+        requireWorkable(projectId, milestoneId, worker);
         if (hours == null || hours.signum() <= 0 || hours.compareTo(MAX_MANUAL_HOURS) > 0) {
             throw new IllegalArgumentException("hours must be more than 0 and at most " + MAX_MANUAL_HOURS);
         }
         BigDecimal rounded = hours.setScale(2, RoundingMode.HALF_UP).max(SMALLEST_ENTRY);
-        activeTimer(employee).ifPresent(running -> {
+        activeTimer(worker).ifPresent(running -> {
             throw new ConflictException("Stop your running timer on milestone " + running.milestoneId()
                     + " before logging hours by hand");
         });
-        BigDecimal rate = hourlyRate(employee);
-        TimeEntry entry = new TimeEntry(UUID.randomUUID().toString(), projectId, milestoneId, employee.id(),
+        BigDecimal rate = hourlyRate(worker);
+        TimeEntry entry = new TimeEntry(UUID.randomUUID().toString(), projectId, milestoneId, worker.id(),
                 TimeEntry.Source.MANUAL, blankToNull(note), null, null, rounded, rate, cost(rounded, rate),
                 clock.instant(), null, null, null);
         entries.insertLogged(entry);
-        audit("time_logged", entry, employee.email(), Map.of());
+        audit("time_logged", entry, worker.email(), Map.of());
         return entry.withoutPay();
     }
 
-    public TimeEntry startTimer(String projectId, String milestoneId, String note, User employee) {
-        requireWorkable(projectId, milestoneId, employee);
+    public TimeEntry startTimer(String projectId, String milestoneId, String note, User worker) {
+        requireWorkable(projectId, milestoneId, worker);
         // Closes a timer that already ran out, so it does not block this one.
-        activeTimer(employee);
+        activeTimer(worker);
         Instant now = clock.instant();
-        TimeEntry timer = new TimeEntry(UUID.randomUUID().toString(), projectId, milestoneId, employee.id(),
+        TimeEntry timer = new TimeEntry(UUID.randomUUID().toString(), projectId, milestoneId, worker.id(),
                 TimeEntry.Source.TIMER, blankToNull(note), now, null, null, null, null, now, null, null, null);
         // The database refuses a second running timer, so two simultaneous starts cannot both succeed.
         entries.insertRunning(timer);
-        audit("timer_started", timer, employee.email(), Map.of());
+        audit("timer_started", timer, worker.email(), Map.of());
         return timer.withoutPay();
     }
 
@@ -94,15 +96,15 @@ public class TimeService {
      * The time is logged even if the milestone was archived or reassigned while the timer ran, because the work
      * was still done.
      */
-    public TimeEntry stopTimer(User employee) {
-        TimeEntry running = entries.findRunning(employee.id())
+    public TimeEntry stopTimer(User worker) {
+        TimeEntry running = entries.findRunning(worker.id())
                 .orElseThrow(() -> new NotFoundException("No timer is running"));
-        return finish(running, employee, "timer_stopped").withoutPay();
+        return finish(running, worker, "timer_stopped").withoutPay();
     }
 
-    /** The employee's running timer; one that has reached 8 hours is closed first, and then there is none. */
-    public TimeEntry runningTimer(User employee) {
-        return activeTimer(employee).map(TimeEntry::withoutPay)
+    /** The user's running timer; one that has reached 8 hours is closed first, and then there is none. */
+    public TimeEntry runningTimer(User worker) {
+        return activeTimer(worker).map(TimeEntry::withoutPay)
                 .orElseThrow(() -> new NotFoundException("No timer is running"));
     }
 
@@ -167,39 +169,49 @@ public class TimeService {
     }
 
     /** The running timer, after closing it at 8 hours if it has run that long. */
-    private Optional<TimeEntry> activeTimer(User employee) {
-        Optional<TimeEntry> running = entries.findRunning(employee.id());
+    private Optional<TimeEntry> activeTimer(User worker) {
+        Optional<TimeEntry> running = entries.findRunning(worker.id());
         if (running.isPresent() && !clock.instant().isBefore(running.get().startedAt().plus(MAX_TIMER))) {
-            finish(running.get(), employee, "timer_capped");
+            finish(running.get(), worker, "timer_capped");
             return Optional.empty();
         }
         return running;
     }
 
     /** Ends a running timer now, or at 8 hours if it has run longer, and logs its time. */
-    private TimeEntry finish(TimeEntry running, User employee, String action) {
+    private TimeEntry finish(TimeEntry running, User worker, String action) {
         Instant cap = running.startedAt().plus(MAX_TIMER);
         Instant end = clock.instant().isAfter(cap) ? cap : clock.instant();
         BigDecimal seconds = BigDecimal.valueOf(Duration.between(running.startedAt(), end).toSeconds());
         BigDecimal hours = seconds.divide(SECONDS_PER_HOUR, 2, RoundingMode.HALF_UP).max(SMALLEST_ENTRY);
-        BigDecimal rate = hourlyRate(employee);
+        BigDecimal rate = hourlyRate(worker);
         TimeEntry finished = new TimeEntry(running.id(), running.projectId(), running.milestoneId(), running.userId(),
                 running.source(), running.note(), running.startedAt(), end, hours, rate, cost(hours, rate),
                 clock.instant(), null, null, null);
         if (!entries.stop(finished)) {
             throw new NotFoundException("No timer is running");
         }
-        audit(action, finished, employee.email(), Map.of());
+        audit(action, finished, worker.email(), Map.of());
         return finished;
     }
 
-    /** The employee must be assigned to this active milestone, which must not be complete. */
-    private void requireWorkable(String projectId, String milestoneId, User employee) {
+    /**
+     * Who may log their own time on a milestone: an employee assigned to it, the project's manager, or an admin.
+     * The milestone must not be complete or blocked by unfinished dependencies.
+     */
+    private void requireWorkable(String projectId, String milestoneId, User worker) {
         Project project = projects.findById(projectId)
                 .orElseThrow(() -> new NotFoundException("Project " + projectId + " not found"));
         Milestone milestone = requireMilestone(project, milestoneId);
-        if (!milestone.assignedEmployees().contains(employee.id())) {
-            throw new ForbiddenException("You can only log time on milestones you are assigned to");
+        boolean allowed = switch (worker.role()) {
+            case ADMIN -> true;
+            case MANAGER -> worker.id().equals(project.manager());
+            case EMPLOYEE -> milestone.assignedEmployees().contains(worker.id());
+        };
+        if (!allowed) {
+            throw new ForbiddenException(worker.role() == Role.MANAGER
+                    ? "You can only log time on projects you manage"
+                    : "You can only log time on milestones you are assigned to");
         }
         if (milestone.status() == CompletionStatus.COMPLETE) {
             throw new ConflictException("This milestone is complete; time can no longer be logged on it");
@@ -232,9 +244,9 @@ public class TimeService {
                 .orElseThrow(() -> new NotFoundException("Milestone " + milestoneId + " not found"));
     }
 
-    /** Annual salary / 2080, to four decimals; an employee without a salary costs nothing. */
-    private BigDecimal hourlyRate(User employee) {
-        BigDecimal salary = users.findById(employee.id()).map(User::salary).orElse(null);
+    /** Annual salary / 2080, to four decimals; someone without a salary costs nothing. */
+    private BigDecimal hourlyRate(User worker) {
+        BigDecimal salary = users.findById(worker.id()).map(User::salary).orElse(null);
         return salary == null ? BigDecimal.ZERO : salary.divide(WORK_HOURS_PER_YEAR, 4, RoundingMode.HALF_UP);
     }
 

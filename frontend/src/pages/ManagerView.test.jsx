@@ -121,6 +121,9 @@ describe('manager view', () => {
 
     const build = screen.getByText('Build', { selector: 'strong' }).closest('tr');
     expect(within(build).getByText('⚠ Waiting for review for 13 days')).toBeTruthy();
+    // Managers log their own time too.
+    expect(within(design).getByRole('button', { name: 'Log Time' })).toBeTruthy();
+    expect(within(design).getByRole('button', { name: 'Start Timer' })).toBeTruthy();
   });
 
   it('shows their team with each person’s current milestones', async () => {

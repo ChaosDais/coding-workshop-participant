@@ -22,7 +22,9 @@ const NO_FILTERS = {
 
 /**
  * The home page: projects with their dates, status and how long they have been in it (flagging possible
- * bottlenecks), progress against expected hours and whether they can be worked on. Admins see every project and can create them; managers see the projects they manage.
+ * bottlenecks), progress against expected hours and whether they can be worked on. Admins see every project and
+ * can create them; managers see the projects they manage; employees see the unfinished projects they are assigned
+ * to, with their own milestones and without the overrun and bottleneck warnings.
  * Open projects come first; completed ones are hidden unless asked for, and then shown greyed out at the bottom
  * with their completion dates. Rows open the project view.
  * @returns {JSX.Element} The projects page.
@@ -30,6 +32,7 @@ const NO_FILTERS = {
 function ProjectsPage() {
   const { user } = useAuth();
   const isAdmin = user.role === 'ADMIN';
+  const isEmployee = user.role === 'EMPLOYEE';
   const load = useCallback(() => loadProjectsAndPeople(user), [user]);
   const { data, error, loading, reload } = useLoader(load);
   const [filters, setFilters] = useState(NO_FILTERS);
@@ -93,10 +96,12 @@ function ProjectsPage() {
             </select>
           </label>
         )}
-        <label className="checkbox">
-          <input type="checkbox" checked={filters.showCompleted} onChange={set('showCompleted')} />
-          Show completed projects
-        </label>
+        {!isEmployee && (
+          <label className="checkbox">
+            <input type="checkbox" checked={filters.showCompleted} onChange={set('showCompleted')} />
+            Show completed projects
+          </label>
+        )}
         {isAdmin && (
           <label className="checkbox">
             <input type="checkbox" checked={filters.showArchived} onChange={set('showArchived')} />
@@ -110,7 +115,11 @@ function ProjectsPage() {
       {loading && !data && <p className="muted" role="status">Loading projects…</p>}
 
       {data && data.active.length === 0 && data.archived.length === 0 && (
-        <p className="muted">{isAdmin ? 'No projects yet. Create the first one with New Project.' : 'You are not managing any projects yet.'}</p>
+        <p className="muted">
+          {isAdmin && 'No projects yet. Create the first one with New Project.'}
+          {user.role === 'MANAGER' && 'You are not managing any projects yet.'}
+          {isEmployee && 'You are not assigned to any current projects.'}
+        </p>
       )}
       {data && (data.active.length > 0 || data.archived.length > 0) && (
         rows.length === 0 ? (
@@ -124,6 +133,7 @@ function ProjectsPage() {
                 <tr>
                   <th scope="col">Project</th>
                   <th scope="col">Status</th>
+                  {isEmployee && <th scope="col">My Milestones</th>}
                   {isAdmin && <th scope="col">Manager</th>}
                   <th scope="col">Start</th>
                   <th scope="col">Expected end</th>
@@ -144,14 +154,27 @@ function ProjectsPage() {
                       </td>
                       <td>
                         <StatusBadge status={project.status} />
-                        <StatusAge item={project} />
+                        {!isEmployee && <StatusAge item={project} />}
                       </td>
+                      {isEmployee && (
+                        <td>
+                          <ul className="plain-list">
+                            {project.milestones.filter((milestone) => milestone.assignedEmployees.includes(user.id))
+                              .map((milestone) => (
+                                <li key={milestone.id}>
+                                  {`${milestone.name} `}
+                                  <StatusBadge status={milestone.status} />
+                                </li>
+                              ))}
+                          </ul>
+                        </td>
+                      )}
                       {isAdmin && <td>{lookups.users.get(project.manager)?.name ?? project.manager}</td>}
                       <td className="nowrap">{formatDate(project.startDate)}</td>
                       <td className="nowrap">{formatDate(project.endDate)}</td>
                       {showingCompleted && <td className="nowrap">{project.completedAt ? formatTimestamp(project.completedAt) : '—'}</td>}
                       <td className="numeric">
-                        <HoursProgress progress={project.progressTime} expected={project.expectedHours} showOverrun label={project.name} />
+                        <HoursProgress progress={project.progressTime} expected={project.expectedHours} showOverrun={!isEmployee} label={project.name} />
                       </td>
                       <td><span className={`availability ${state}`}>{label}</span></td>
                     </tr>

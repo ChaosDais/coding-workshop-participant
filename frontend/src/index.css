@@ -255,6 +255,28 @@ tr.completed .badge, tr.completed a { filter: grayscale(1); }
 .status-age.notable { color: var(--warning); }
 .notable-badge { background: var(--warning-soft); color: var(--warning); white-space: normal; }
 
+/* Running timer, under the navigation bar */
+.timer-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 1.5rem;
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--border);
+}
+.timer-bar .timer-clock {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.3rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.timer-what { font-weight: 600; flex: 1; min-width: 160px; }
+.timer-bar .error-banner { margin: 0; }
+
+tr.mine td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.you-badge { margin-left: 0.4rem; background: var(--accent-soft); color: var(--accent); }
+
 /* Milestone assignees */
 .assignees { display: grid; gap: 0.35rem; min-width: 220px; }
 .assignee { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }

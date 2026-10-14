@@ -11,6 +11,9 @@ const LINKS = {
     { section: 'projects', label: 'Projects', href: '#/projects' },
     { section: 'employees', label: 'Employees', href: '#/employees' },
   ],
+  EMPLOYEE: [
+    { section: 'projects', label: 'Projects', href: '#/projects' },
+  ],
 };
 
 /**

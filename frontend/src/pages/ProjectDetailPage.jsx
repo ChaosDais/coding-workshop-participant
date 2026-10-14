@@ -1,9 +1,13 @@
-import { useCallback, useMemo, useState } from 'react';
+import {
+  useCallback, useEffect, useMemo, useState,
+} from 'react';
 import PropTypes from 'prop-types';
 import AssigneeList from '../components/AssigneeList.jsx';
 import AuditTable from '../components/AuditTable.jsx';
 import ErrorMessage from '../components/ErrorMessage.jsx';
 import HoursProgress from '../components/HoursProgress.jsx';
+import LogTimeForm from '../components/LogTimeForm.jsx';
+import TimeEntries from '../components/TimeEntries.jsx';
 import MilestoneForm from '../components/MilestoneForm.jsx';
 import Modal from '../components/Modal.jsx';
 import ProjectForm from '../components/ProjectForm.jsx';
@@ -11,7 +15,8 @@ import StatusAge from '../components/StatusAge.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useLoader } from '../hooks/useLoader.js';
-import { auditApi, projectsApi } from '../services/api.js';
+import { auditApi, projectsApi, timeApi } from '../services/api.js';
+import { useTimer } from '../timer/TimerContext.jsx';
 import { loadProjectsAndPeople } from '../services/projectData.js';
 import { availability, blockingMilestones, openMilestoneByEmployee } from '../utils/projects.js';
 import {
@@ -38,6 +43,8 @@ function withStatus(project, status) {
  * One project in full: details, budget and spending, dependencies, milestones with progress against expected hours
  * and their assignees. Admins and the project's manager can change statuses, add, edit and archive milestones, and
  * assign, move and remove employees. Admins can also edit, archive and restore the project and see its history.
+ * Everyone logs their own time here, by hand or with the timer: employees on their own milestones, which they can
+ * also send for review, and admins and managers on any unfinished milestone. Employees see no money figures.
  * @param {object} props Component props.
  * @param {string} props.projectId The project's id.
  * @returns {JSX.Element} The project view.
@@ -45,6 +52,8 @@ function withStatus(project, status) {
 function ProjectDetailPage({ projectId }) {
   const { user } = useAuth();
   const isAdmin = user.role === 'ADMIN';
+  const canManage = user.role !== 'EMPLOYEE';
+  const timer = useTimer();
   const load = useCallback(() => loadProjectsAndPeople(user), [user]);
   const { data, error, loading, reload } = useLoader(load);
   const [showArchivedMilestones, setShowArchivedMilestones] = useState(false);
@@ -53,6 +62,8 @@ function ProjectDetailPage({ projectId }) {
   const [milestoneForm, setMilestoneForm] = useState();
   const [actionError, setActionError] = useState();
   const [busy, setBusy] = useState(false);
+  const [logFor, setLogFor] = useState();
+  const [timeFor, setTimeFor] = useState();
 
   const loadArchived = useCallback(
     () => (showArchivedMilestones ? projectsApi.milestones(projectId, true) : Promise.resolve([])),
@@ -87,6 +98,13 @@ function ProjectDetailPage({ projectId }) {
     archivedMilestones.reload();
     history.reload();
   };
+
+  // Time logged through the timer bar changes progress, so show it.
+  useEffect(() => {
+    if (timer.logged > 0) {
+      reload();
+    }
+  }, [timer.logged, reload]);
 
   const act = async (action) => {
     setActionError(undefined);
@@ -123,6 +141,13 @@ function ProjectDetailPage({ projectId }) {
   const names = (ids) => ids.map((id) => lookups.users.get(id)?.name ?? `Former team member (${id.slice(0, 8)})`).join(', ');
   const dependencies = project.dependencies ?? project.dependsOn.map((id) => ({ id, ...lookups.projects.get(id) }));
 
+  const logTime = async (hours, note) => {
+    await timeApi.log(projectId, logFor.id, hours, note);
+    setLogFor(undefined);
+    timer.recordLogged();
+    refresh();
+  };
+
   const saveProject = async (body) => {
     await projectsApi.update(projectId, body);
     setEditing(false);
@@ -149,7 +174,7 @@ function ProjectDetailPage({ projectId }) {
           {archived && <span className="badge archived-badge">Archived</span>}
         </h1>
         <div className="toolbar">
-          {editable && (
+          {editable && canManage && (
             <label htmlFor="project-status-select" className="inline-label">
               Status
               <select id="project-status-select" value={project.status} disabled={busy} onChange={(event) => act(() => projectsApi.update(projectId, withStatus(project, event.target.value)))}>
@@ -172,15 +197,15 @@ function ProjectDetailPage({ projectId }) {
       <dl className="summary">
         {isAdmin && <div><dt>Manager</dt><dd>{lookups.users.get(project.manager)?.name ?? project.manager}</dd></div>}
         <div><dt>Dates</dt><dd>{`${formatDate(project.startDate)} – ${formatDate(project.endDate)}`}</dd></div>
-        {project.status !== 'COMPLETE' && project.statusChangedAt && (
+        {canManage && project.status !== 'COMPLETE' && project.statusChangedAt && (
           <div><dt>Time in status</dt><dd><StatusAge item={project} /></dd></div>
         )}
         <div>
           <dt>Progress</dt>
-          <dd><HoursProgress progress={project.progressTime} expected={project.expectedHours} showOverrun label={project.name} /></dd>
+          <dd><HoursProgress progress={project.progressTime} expected={project.expectedHours} showOverrun={canManage} label={project.name} /></dd>
         </div>
-        <div><dt>Budget</dt><dd>{formatMoney(project.budget)}</dd></div>
-        <div><dt>Spent</dt><dd>{formatMoney(project.spent)}</dd></div>
+        {project.budget !== undefined && <div><dt>Budget</dt><dd>{formatMoney(project.budget)}</dd></div>}
+        {project.spent !== undefined && <div><dt>Spent</dt><dd>{formatMoney(project.spent)}</dd></div>}
         <div><dt>Completed</dt><dd>{project.completedAt ? formatTimestamp(project.completedAt) : '—'}</dd></div>
         <div>
           <dt>Availability</dt>
@@ -215,11 +240,13 @@ function ProjectDetailPage({ projectId }) {
         <div className="section-header">
           <h2>Milestones</h2>
           <div className="toolbar">
-            <label className="checkbox">
-              <input type="checkbox" checked={showArchivedMilestones} onChange={(event) => setShowArchivedMilestones(event.target.checked)} />
-              Show archived milestones
-            </label>
-            {editable && <button type="button" className="primary" onClick={() => setMilestoneForm({})}>Add Milestone</button>}
+            {canManage && (
+              <label className="checkbox">
+                <input type="checkbox" checked={showArchivedMilestones} onChange={(event) => setShowArchivedMilestones(event.target.checked)} />
+                Show archived milestones
+              </label>
+            )}
+            {editable && canManage && <button type="button" className="primary" onClick={() => setMilestoneForm({})}>Add Milestone</button>}
           </div>
         </div>
         {project.milestones.length === 0 ? <p className="muted">No milestones yet.</p> : (
@@ -239,23 +266,32 @@ function ProjectDetailPage({ projectId }) {
               <tbody>
                 {project.milestones.map((milestone) => {
                   const blocking = blockingMilestones(milestone, project.milestones);
+                  const mine = milestone.assignedEmployees.includes(user.id);
+                  const canLog = editable && milestone.status !== 'COMPLETE' && (canManage || mine);
+                  const timerHere = timer.timer?.milestoneId === milestone.id;
                   return (
-                    <tr key={milestone.id} aria-selected={historyFor?.id === milestone.id}>
+                    <tr key={milestone.id} className={mine ? 'mine' : undefined} aria-selected={historyFor?.id === milestone.id}>
                       <td>
                         <strong>{milestone.name}</strong>
+                        {mine && <span className="badge you-badge">You</span>}
                         {milestone.description && <p className="muted small">{milestone.description}</p>}
                       </td>
                       <td>
-                        {editable ? (
+                        {editable && canManage ? (
                           <select aria-label={`Status of ${milestone.name}`} value={milestone.status} disabled={busy} onChange={(event) => act(() => projectsApi.setMilestoneStatus(projectId, milestone.id, event.target.value))}>
                             {STATUSES.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
                           </select>
                         ) : <StatusBadge status={milestone.status} />}
-                        <StatusAge item={milestone} />
+                        {canManage && <StatusAge item={milestone} />}
+                        {!canManage && mine && editable && !['AWAITING_REVIEW', 'COMPLETE'].includes(milestone.status) && (
+                          <button type="button" className="link-button" disabled={busy} onClick={() => act(() => projectsApi.setMilestoneStatus(projectId, milestone.id, 'AWAITING_REVIEW'))}>
+                            Send for Review
+                          </button>
+                        )}
                       </td>
                       <td className="nowrap">{`${formatDate(milestone.startDate)} – ${formatDate(milestone.endDate)}`}</td>
                       <td className="numeric">
-                        <HoursProgress progress={milestone.progressTime} expected={milestone.expectedHours} showOverrun label={milestone.name} />
+                        <HoursProgress progress={milestone.progressTime} expected={milestone.expectedHours} showOverrun={canManage} label={milestone.name} />
                       </td>
                       <td>
                         <AssigneeList
@@ -264,7 +300,7 @@ function ProjectDetailPage({ projectId }) {
                           team={team}
                           workingOn={openMilestoneByEmployee(project, milestone.id)}
                           usersById={lookups.users}
-                          editable={editable}
+                          editable={editable && canManage}
                           busy={busy}
                           onAssign={(employeeId) => act(() => projectsApi.assign(projectId, milestone.id, employeeId))}
                           onUnassign={(employeeId) => act(() => projectsApi.unassign(projectId, milestone.id, employeeId))}
@@ -277,9 +313,22 @@ function ProjectDetailPage({ projectId }) {
                         {blocking.length > 0 && <p className="availability blocked small">{`Waiting on ${blocking.join(', ')}`}</p>}
                       </td>
                       <td className="row-actions">
+                        {canLog && <button type="button" className="link-button" onClick={() => setLogFor(milestone)}>Log Time</button>}
+                        {canLog && (timerHere ? <span className="muted small">Timer running</span> : (
+                          <button
+                            type="button"
+                            className="link-button"
+                            disabled={busy || Boolean(timer.timer)}
+                            title={timer.timer ? 'Stop your running timer first' : undefined}
+                            onClick={() => act(() => timer.start(project, milestone))}
+                          >
+                            Start Timer
+                          </button>
+                        ))}
+                        {(canManage || mine) && <button type="button" className="link-button" onClick={() => setTimeFor(milestone)}>Time Log</button>}
                         {isAdmin && <button type="button" className="link-button" onClick={() => setHistoryFor(milestone)}>History</button>}
-                        {editable && <button type="button" className="link-button" onClick={() => setMilestoneForm({ milestone })}>Edit</button>}
-                        {editable && (
+                        {editable && canManage && <button type="button" className="link-button" onClick={() => setMilestoneForm({ milestone })}>Edit</button>}
+                        {editable && canManage && (
                           <button type="button" className="link-button danger" onClick={() => window.confirm(`Archive milestone ${milestone.name}?`) && act(() => projectsApi.archiveMilestone(projectId, milestone.id))}>
                             Archive
                           </button>
@@ -332,6 +381,16 @@ function ProjectDetailPage({ projectId }) {
       {editing && (
         <Modal title={`Edit ${project.name}`} onClose={() => setEditing(false)}>
           <ProjectForm project={project} managers={lookups.managers} projects={data.active} onSubmit={saveProject} onCancel={() => setEditing(false)} />
+        </Modal>
+      )}
+      {logFor && (
+        <Modal title={`Log Time on ${logFor.name}`} onClose={() => setLogFor(undefined)}>
+          <LogTimeForm onSubmit={logTime} onCancel={() => setLogFor(undefined)} />
+        </Modal>
+      )}
+      {timeFor && (
+        <Modal title={`Time Logged on ${timeFor.name}`} onClose={() => setTimeFor(undefined)}>
+          <TimeEntries projectId={projectId} milestoneId={timeFor.id} usersById={lookups.users} />
         </Modal>
       )}
       {milestoneForm && (
