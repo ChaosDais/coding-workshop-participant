@@ -58,13 +58,13 @@ class PostgresStoresTest {
                 ProjectStore projects = new PostgresProjectStore(database);
 
                 Milestone design = new Milestone("m1", "Design", "Wireframes and visual design", LocalDate.of(2026, 1, 1), LocalDate.of(2026, 2, 1),
-                        4.5, List.of("bob", "carol"), CompletionStatus.IN_PROGRESS);
+                        4.5, List.of("bob", "carol"), CompletionStatus.IN_PROGRESS, null, null);
                 Milestone build = new Milestone("a0", "Build", null, LocalDate.of(2026, 2, 2), LocalDate.of(2026, 3, 1), 0,
-                        List.of(), CompletionStatus.TODO);
+                        List.of(), CompletionStatus.TODO, null, List.of("m1"));
                 Project project = new Project("p1", "Apollo", "Crewed lunar landing", LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
-                        12.5, "alice", new BigDecimal("50000.75"), CompletionStatus.TODO, List.of(design, build));
+                        12.5, "alice", new BigDecimal("50000.75"), CompletionStatus.TODO, List.of(design, build), null);
                 Project earlier = new Project("p2", "Mercury", null, LocalDate.of(2025, 6, 1), LocalDate.of(2025, 9, 1),
-                        0, "dave", BigDecimal.ZERO, CompletionStatus.COMPLETE, List.of());
+                        0, "dave", BigDecimal.ZERO, CompletionStatus.COMPLETE, List.of(), null);
 
                 projects.insert(project);
                 projects.insert(earlier);
@@ -73,16 +73,16 @@ class PostgresStoresTest {
                 assertEquals(List.of(earlier, project), projects.findAll(false));
 
                 Project updated = new Project("p1", "Gemini", null, project.startDate(), project.endDate(), 20, "erin",
-                        new BigDecimal("1.00"), CompletionStatus.COMPLETE, List.of(build));
+                        new BigDecimal("1.00"), CompletionStatus.COMPLETE, List.of(build), null);
                 assertTrue(projects.replace(updated));
                 assertEquals(updated, projects.findById("p1").orElseThrow());
                 assertFalse(projects.replace(new Project("missing", "n", null, project.startDate(), project.endDate(), 0,
-                        "m", BigDecimal.ONE, null, null)));
+                        "m", BigDecimal.ONE, null, null, null)));
 
                 // The milestone left out of the update is archived, not deleted, and its id cannot be reused.
                 assertEquals(1, count(admin, schema, "milestones WHERE id = 'm1' AND archived_at IS NOT NULL"));
                 Project reusingId = new Project("p1", "Gemini", null, project.startDate(), project.endDate(), 20, "erin",
-                        new BigDecimal("1.00"), CompletionStatus.COMPLETE, List.of(build, design));
+                        new BigDecimal("1.00"), CompletionStatus.COMPLETE, List.of(build, design), null);
                 assertThrows(ConflictException.class, () -> projects.replace(reusingId));
                 assertEquals(updated, projects.findById("p1").orElseThrow());
 
@@ -202,9 +202,9 @@ class PostgresStoresTest {
                         new User("e1", "e1@example.com", "E1", Role.EMPLOYEE, null, null, null, false), "hash");
                 ProjectStore projects = new PostgresProjectStore(database);
                 Milestone milestone = new Milestone("m1", "Design", null, LocalDate.of(2026, 1, 1),
-                        LocalDate.of(2026, 2, 1), 1.0, List.of("e1"), CompletionStatus.IN_PROGRESS);
+                        LocalDate.of(2026, 2, 1), 1.0, List.of("e1"), CompletionStatus.IN_PROGRESS, null, null);
                 projects.insert(new Project("p1", "Apollo", null, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
-                        0, "m", BigDecimal.TEN, null, List.of(milestone)));
+                        0, "m", BigDecimal.TEN, null, List.of(milestone), null));
                 TimeEntryStore entries = new PostgresTimeEntryStore(database);
                 Instant start = Instant.parse("2026-10-14T09:00:00Z");
 
@@ -241,14 +241,16 @@ class PostgresStoresTest {
                 assertEquals(3.0, projects.findById("p1").orElseThrow().milestones().get(0).progressTime());
                 assertEquals(0, new BigDecimal("100.00").compareTo(entries.totalCostByProject().get("p1")));
 
-                // Changing the status leaves the logged progress alone.
-                assertTrue(projects.setMilestoneStatus("p1", "m1", CompletionStatus.AWAITING_REVIEW));
+                // Changing the status leaves the logged progress alone, and stores the completion time.
+                assertTrue(projects.setMilestoneStatus("p1", "m1", CompletionStatus.AWAITING_REVIEW, null));
                 Milestone reviewed = projects.findById("p1").orElseThrow().milestones().get(0);
                 assertEquals(CompletionStatus.AWAITING_REVIEW, reviewed.status());
                 assertEquals(3.0, reviewed.progressTime());
-                assertFalse(projects.setMilestoneStatus("p1", "missing", CompletionStatus.COMPLETE));
+                assertTrue(projects.setMilestoneStatus("p1", "m1", CompletionStatus.COMPLETE, fixedAt));
+                assertEquals(fixedAt, projects.findById("p1").orElseThrow().milestones().get(0).completedAt());
+                assertFalse(projects.setMilestoneStatus("p1", "missing", CompletionStatus.COMPLETE, fixedAt));
                 assertTrue(projects.archive("p1"));
-                assertFalse(projects.setMilestoneStatus("p1", "m1", CompletionStatus.COMPLETE));
+                assertFalse(projects.setMilestoneStatus("p1", "m1", CompletionStatus.COMPLETE, fixedAt));
             } finally {
                 statement.execute("DROP SCHEMA " + schema + " CASCADE");
             }

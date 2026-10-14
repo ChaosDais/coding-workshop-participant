@@ -4,7 +4,6 @@ import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 
 import static com.acme.TestApp.ADMIN_EMAIL;

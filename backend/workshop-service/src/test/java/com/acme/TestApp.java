@@ -55,7 +55,7 @@ class TestApp {
         handler = new Handler(config.router(new TokenAuthenticator(tokens, users),
                 new AuthService(users, passwords, tokens, audit),
                 new UserService(users, projects, passwords, tokens, audit),
-                new ProjectService(projects, users, timeEntries, audit),
+                new ProjectService(projects, users, timeEntries, audit, clock),
                 new TimeService(timeEntries, projects, users, audit, clock), audit));
     }
 

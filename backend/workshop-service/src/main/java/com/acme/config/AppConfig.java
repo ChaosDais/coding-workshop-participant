@@ -116,8 +116,8 @@ public class AppConfig {
 
     @Bean
     public ProjectService projectService(ProjectStore projectStore, UserStore userStore,
-                                         TimeEntryStore timeEntryStore, AuditService auditService) {
-        return new ProjectService(projectStore, userStore, timeEntryStore, auditService);
+                                         TimeEntryStore timeEntryStore, AuditService auditService, Clock clock) {
+        return new ProjectService(projectStore, userStore, timeEntryStore, auditService, clock);
     }
 
     @Bean

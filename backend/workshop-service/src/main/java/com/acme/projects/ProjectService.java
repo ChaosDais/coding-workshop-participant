@@ -14,6 +14,7 @@ import com.acme.repos.TimeEntryStore;
 import com.acme.repos.UserStore;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,26 +28,30 @@ import java.util.Set;
  *   <li>Admins can see and change every project, including archived ones.</li>
  *   <li>Managers can see and change only the active projects they manage, but cannot hand a project to another
  *       manager or change its description.</li>
- *   <li>Employees can see only the active projects where they are assigned to a milestone, and only those
- *       milestones; the one change they can make is moving such a milestone to AWAITING_REVIEW.</li>
+ *   <li>Employees can see only the active projects where they are assigned to a milestone, with all of that
+ *       project's milestones; the one change they can make is moving one of their own milestones to
+ *       AWAITING_REVIEW.</li>
  * </ul>
  * Whoever makes the change, only employees on the project manager's team can be newly assigned to its milestones;
  * an employee moves to another team by an admin changing their manager.
  * A project's manager must be an active manager and assigned employees must be active employees; references are
  * checked when they change, so existing ones stay valid if a user is later archived or moved to another team.
+ * Dates, completion times and milestone dependencies follow {@link ProjectRules} on every change.
  */
 public class ProjectService {
     private final ProjectStore projects;
     private final UserStore users;
     private final TimeEntryStore timeEntries;
     private final AuditService auditService;
+    private final Clock clock;
 
     public ProjectService(ProjectStore projects, UserStore users, TimeEntryStore timeEntries,
-                          AuditService auditService) {
+                          AuditService auditService, Clock clock) {
         this.projects = projects;
         this.users = users;
         this.timeEntries = timeEntries;
         this.auditService = auditService;
+        this.clock = clock;
     }
 
     /**
@@ -101,7 +106,7 @@ public class ProjectService {
 
     private static ProjectView view(Project project, User actor, Map<String, BigDecimal> spent) {
         return actor.role() == Role.EMPLOYEE
-                ? ProjectView.forEmployee(project, actor.id())
+                ? ProjectView.forEmployee(project)
                 : ProjectView.full(project, spent.getOrDefault(project.id(), BigDecimal.ZERO));
     }
 
@@ -112,9 +117,10 @@ public class ProjectService {
         }
         requireActiveUser(project.manager(), Role.MANAGER, "manager");
         project.milestones().forEach(milestone -> requireEmployees(milestone, Set.of(), project.manager()));
-        projects.insert(project);
-        audit("project_created", project, null, actor);
-        return view(project, actor);
+        Project created = ProjectRules.apply(null, project, clock.instant());
+        projects.insert(created);
+        audit("project_created", created, null, actor);
+        return view(created, actor);
     }
 
     /** Applies the changes to the project; its milestones are kept unless {@code replaceMilestones} is set. */
@@ -140,9 +146,10 @@ public class ProjectService {
             changes.milestones().forEach(milestone ->
                     requireEmployees(milestone, assignedBefore(existing, milestone), changes.manager()));
         }
-        Project updated = new Project(id, changes.name(), description, changes.startDate(), changes.endDate(),
-                changes.progressTime(), changes.manager(), changes.budget(), changes.status(),
-                replaceMilestones ? changes.milestones() : existing.milestones());
+        Project updated = ProjectRules.apply(existing, new Project(id, changes.name(), description,
+                changes.startDate(), changes.endDate(), changes.progressTime(), changes.manager(), changes.budget(),
+                changes.status(), replaceMilestones ? changes.milestones() : existing.milestones(), null),
+                clock.instant());
         save(updated);
         audit("project_updated", updated, null, actor);
         return view(updated, actor);
@@ -175,28 +182,31 @@ public class ProjectService {
         requireEmployees(milestone, Set.of(), project.manager());
         List<Milestone> milestones = new ArrayList<>(project.milestones());
         milestones.add(milestone);
-        save(withMilestones(project, milestones));
+        Project updated = ProjectRules.apply(project, project.withMilestones(milestones), clock.instant());
+        save(updated);
         audit("milestone_added", project, milestone.id(), actor);
-        return milestone;
+        return updated.milestones().get(milestones.size() - 1);
     }
 
     public Milestone updateMilestone(String projectId, String milestoneId, Milestone changes, User actor) {
         Project project = requireEditable(projectId, actor);
         int index = requireMilestoneIndex(project, milestoneId);
-        Milestone updated = new Milestone(milestoneId, changes.name(), changes.description(), changes.startDate(),
-                changes.endDate(), changes.progressTime(), changes.assignedEmployees(), changes.status());
-        requireEmployees(updated, Set.copyOf(project.milestones().get(index).assignedEmployees()), project.manager());
+        Milestone changed = new Milestone(milestoneId, changes.name(), changes.description(), changes.startDate(),
+                changes.endDate(), changes.progressTime(), changes.assignedEmployees(), changes.status(), null,
+                changes.dependsOn());
+        requireEmployees(changed, Set.copyOf(project.milestones().get(index).assignedEmployees()), project.manager());
         List<Milestone> milestones = new ArrayList<>(project.milestones());
-        milestones.set(index, updated);
-        save(withMilestones(project, milestones));
+        milestones.set(index, changed);
+        Project updated = ProjectRules.apply(project, project.withMilestones(milestones), clock.instant());
+        save(updated);
         audit("milestone_updated", project, milestoneId, actor);
-        return updated;
+        return updated.milestones().get(index);
     }
 
-    /** Removes the milestone from the project; the store keeps it as archived. */
     /**
      * Moves a milestone to a new status. Employees can only send their own milestones to AWAITING_REVIEW,
      * and cannot reopen one that is already COMPLETE; admins and the project's manager can set any status.
+     * Dependencies apply to everyone: a milestone cannot move past TODO until what it depends on is complete.
      */
     public Milestone changeMilestoneStatus(String projectId, String milestoneId, CompletionStatus status,
                                            User actor) {
@@ -204,7 +214,8 @@ public class ProjectService {
             throw new IllegalArgumentException("status must be one of TODO, IN_PROGRESS, AWAITING_REVIEW, COMPLETE");
         }
         Project project = require(projectId, actor);
-        Milestone milestone = project.milestones().get(requireMilestoneIndex(project, milestoneId));
+        int index = requireMilestoneIndex(project, milestoneId);
+        Milestone milestone = project.milestones().get(index);
         if (actor.role() == Role.EMPLOYEE) {
             if (!milestone.assignedEmployees().contains(actor.id())) {
                 throw new ForbiddenException("Access denied");
@@ -216,7 +227,12 @@ public class ProjectService {
                 throw new ConflictException("This milestone is already complete");
             }
         }
-        if (!projects.setMilestoneStatus(projectId, milestoneId, status)) {
+        List<Milestone> milestones = new ArrayList<>(project.milestones());
+        milestones.set(index, milestone.withStatus(status, null));
+        Milestone changed = ProjectRules.apply(project, project.withMilestones(milestones), clock.instant())
+                .milestones().get(index);
+        // Only the status and completion time are written, so progress logged meanwhile is not overwritten.
+        if (!projects.setMilestoneStatus(projectId, milestoneId, status, changed.completedAt())) {
             // Archived by another request between the lookup and the write.
             throw new NotFoundException("Milestone " + milestoneId + " not found");
         }
@@ -224,15 +240,22 @@ public class ProjectService {
         details.put("from", milestone.status().name());
         details.put("to", status.name());
         audit("milestone_status_changed", project, milestoneId, actor, details);
-        return new Milestone(milestone.id(), milestone.name(), milestone.description(), milestone.startDate(),
-                milestone.endDate(), milestone.progressTime(), milestone.assignedEmployees(), status);
+        return changed;
     }
 
+    /** Removes the milestone from the project; the store keeps it as archived. */
     public void archiveMilestone(String projectId, String milestoneId, User actor) {
         Project project = requireEditable(projectId, actor);
+        int index = requireMilestoneIndex(project, milestoneId);
+        List<String> dependents = ProjectRules.dependentsOf(project, milestoneId).stream()
+                .map(Milestone::name).toList();
+        if (!dependents.isEmpty()) {
+            throw new ConflictException("Other milestones depend on '" + project.milestones().get(index).name()
+                    + "'; remove those dependencies first: " + String.join(", ", dependents));
+        }
         List<Milestone> milestones = new ArrayList<>(project.milestones());
-        milestones.remove(requireMilestoneIndex(project, milestoneId));
-        save(withMilestones(project, milestones));
+        milestones.remove(index);
+        save(project.withMilestones(milestones));
         audit("milestone_archived", project, milestoneId, actor);
     }
 
@@ -275,12 +298,6 @@ public class ProjectService {
                 .filter(user -> !user.archived() && user.role() == role)
                 .orElseThrow(() -> new IllegalArgumentException(field + " must reference an active "
                         + role.name().toLowerCase() + " by user id: " + userId));
-    }
-
-    private static Project withMilestones(Project project, List<Milestone> milestones) {
-        return new Project(project.id(), project.name(), project.description(), project.startDate(),
-                project.endDate(),
-                project.progressTime(), project.manager(), project.budget(), project.status(), milestones);
     }
 
     private void save(Project project) {

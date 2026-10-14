@@ -1,7 +1,6 @@
 package com.acme.repos;
 
 import com.acme.errors.ConflictException;
-import com.acme.models.Milestone;
 import com.acme.models.TimeEntry;
 
 import java.math.BigDecimal;
@@ -91,10 +90,8 @@ public class InMemoryTimeEntryStore implements TimeEntryStore {
 
     /** Same rounding and floor at zero as the PostgreSQL store. */
     private void addProgress(String projectId, String milestoneId, BigDecimal hours) {
-        projects.updateMilestone(projectId, milestoneId, milestone -> new Milestone(milestone.id(),
-                milestone.name(), milestone.description(), milestone.startDate(), milestone.endDate(),
+        projects.updateMilestone(projectId, milestoneId, milestone -> milestone.withProgress(
                 BigDecimal.valueOf(milestone.progressTime()).add(hours).setScale(2, RoundingMode.HALF_UP)
-                        .max(BigDecimal.ZERO).doubleValue(),
-                milestone.assignedEmployees(), milestone.status()));
+                        .max(BigDecimal.ZERO).doubleValue()));
     }
 }

@@ -3,6 +3,7 @@ package com.acme.repos;
 import com.acme.models.CompletionStatus;
 import com.acme.models.Project;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -30,10 +31,11 @@ public interface ProjectStore {
     boolean replace(Project project);
 
     /**
-     * Sets one active milestone's status without touching its other fields, so it cannot overwrite progress
-     * logged at the same moment. Returns false when there is no such active milestone on an active project.
+     * Sets one active milestone's status and completion time without touching its other fields, so it cannot
+     * overwrite progress logged at the same moment. Returns false when there is no such active milestone on an
+     * active project.
      */
-    boolean setMilestoneStatus(String projectId, String milestoneId, CompletionStatus status);
+    boolean setMilestoneStatus(String projectId, String milestoneId, CompletionStatus status, Instant completedAt);
 
     /** Returns false when there is no active project with this id. */
     boolean archive(String id);

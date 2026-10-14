@@ -9,7 +9,10 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -22,9 +25,10 @@ import java.util.Optional;
  */
 public class PostgresProjectStore implements ProjectStore {
     private static final String PROJECT_COLUMNS =
-            "id, name, start_date, end_date, progress_time, manager, budget, status, description";
+            "id, name, start_date, end_date, progress_time, manager, budget, status, description, completed_at";
     private static final String MILESTONE_COLUMNS =
-            "project_id, id, name, start_date, end_date, progress_time, assigned_employees, status, description";
+            "project_id, id, name, start_date, end_date, progress_time, assigned_employees, status, description,"
+                    + " completed_at, depends_on";
 
     private final PostgresDatabase database;
 
@@ -36,7 +40,7 @@ public class PostgresProjectStore implements ProjectStore {
     public void insert(Project project) {
         database.run(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
-                    "INSERT INTO projects (" + PROJECT_COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                    "INSERT INTO projects (" + PROJECT_COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
                 statement.setString(1, project.id());
                 statement.setString(2, project.name());
                 statement.setObject(3, project.startDate());
@@ -46,6 +50,7 @@ public class PostgresProjectStore implements ProjectStore {
                 statement.setBigDecimal(7, project.budget());
                 statement.setString(8, project.status().name());
                 statement.setString(9, project.description());
+                statement.setObject(10, utc(project.completedAt()));
                 statement.executeUpdate();
             }
             saveMilestones(connection, project);
@@ -103,7 +108,8 @@ public class PostgresProjectStore implements ProjectStore {
         return database.run(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
                     "UPDATE projects SET name = ?, start_date = ?, end_date = ?, progress_time = ?, manager = ?,"
-                            + " budget = ?, status = ?, description = ? WHERE id = ? AND archived_at IS NULL")) {
+                            + " budget = ?, status = ?, description = ?, completed_at = ?"
+                            + " WHERE id = ? AND archived_at IS NULL")) {
                 statement.setString(1, project.name());
                 statement.setObject(2, project.startDate());
                 statement.setObject(3, project.endDate());
@@ -112,7 +118,8 @@ public class PostgresProjectStore implements ProjectStore {
                 statement.setBigDecimal(6, project.budget());
                 statement.setString(7, project.status().name());
                 statement.setString(8, project.description());
-                statement.setString(9, project.id());
+                statement.setObject(9, utc(project.completedAt()));
+                statement.setString(10, project.id());
                 if (statement.executeUpdate() == 0) {
                     return false;
                 }
@@ -131,15 +138,18 @@ public class PostgresProjectStore implements ProjectStore {
     }
 
     @Override
-    public boolean setMilestoneStatus(String projectId, String milestoneId, CompletionStatus status) {
+    public boolean setMilestoneStatus(String projectId, String milestoneId, CompletionStatus status,
+                                      Instant completedAt) {
         return database.run(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
-                    "UPDATE milestones SET status = ? WHERE project_id = ? AND id = ? AND archived_at IS NULL"
+                    "UPDATE milestones SET status = ?, completed_at = ?"
+                            + " WHERE project_id = ? AND id = ? AND archived_at IS NULL"
                             + " AND EXISTS (SELECT 1 FROM projects WHERE id = ? AND archived_at IS NULL)")) {
                 statement.setString(1, status.name());
-                statement.setString(2, projectId);
-                statement.setString(3, milestoneId);
-                statement.setString(4, projectId);
+                statement.setObject(2, utc(completedAt));
+                statement.setString(3, projectId);
+                statement.setString(4, milestoneId);
+                statement.setString(5, projectId);
                 return statement.executeUpdate() > 0;
             }
         });
@@ -171,9 +181,10 @@ public class PostgresProjectStore implements ProjectStore {
     private static void saveMilestones(Connection connection, Project project) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO milestones (" + MILESTONE_COLUMNS + ", sort_order)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                         + " ON CONFLICT (project_id, id) DO UPDATE SET name = EXCLUDED.name,"
-                        + " description = EXCLUDED.description,"
+                        + " description = EXCLUDED.description, completed_at = EXCLUDED.completed_at,"
+                        + " depends_on = EXCLUDED.depends_on,"
                         + " start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date,"
                         + " progress_time = EXCLUDED.progress_time, assigned_employees = EXCLUDED.assigned_employees,"
                         + " status = EXCLUDED.status, sort_order = EXCLUDED.sort_order"
@@ -190,7 +201,9 @@ public class PostgresProjectStore implements ProjectStore {
                 statement.setArray(7, connection.createArrayOf("text", milestone.assignedEmployees().toArray()));
                 statement.setString(8, milestone.status().name());
                 statement.setString(9, milestone.description());
-                statement.setInt(10, sortOrder++);
+                statement.setObject(10, utc(milestone.completedAt()));
+                statement.setArray(11, connection.createArrayOf("text", milestone.dependsOn().toArray()));
+                statement.setInt(12, sortOrder++);
                 statement.addBatch();
             }
             int[] counts = statement.executeBatch();
@@ -224,7 +237,9 @@ public class PostgresProjectStore implements ProjectStore {
                             row.getObject("end_date", LocalDate.class),
                             row.getDouble("progress_time"),
                             List.of((String[]) row.getArray("assigned_employees").getArray()),
-                            CompletionStatus.valueOf(row.getString("status"))));
+                            CompletionStatus.valueOf(row.getString("status")),
+                            instant(row, "completed_at"),
+                            List.of((String[]) row.getArray("depends_on").getArray())));
                 }
             }
         }
@@ -242,6 +257,16 @@ public class PostgresProjectStore implements ProjectStore {
                 row.getString("manager"),
                 row.getBigDecimal("budget"),
                 CompletionStatus.valueOf(row.getString("status")),
-                milestones);
+                milestones,
+                instant(row, "completed_at"));
+    }
+
+    private static OffsetDateTime utc(Instant instant) {
+        return instant == null ? null : instant.atOffset(ZoneOffset.UTC);
+    }
+
+    private static Instant instant(ResultSet row, String column) throws SQLException {
+        OffsetDateTime value = row.getObject(column, OffsetDateTime.class);
+        return value == null ? null : value.toInstant();
     }
 }

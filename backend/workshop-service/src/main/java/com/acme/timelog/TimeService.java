@@ -205,6 +205,16 @@ public class TimeService {
         if (milestone.status() == CompletionStatus.COMPLETE) {
             throw new ConflictException("This milestone is complete; time can no longer be logged on it");
         }
+        // Logging time is working on the milestone, which its dependencies have to allow.
+        List<String> blockers = project.milestones().stream()
+                .filter(other -> milestone.dependsOn().contains(other.id()))
+                .filter(other -> other.status() != CompletionStatus.COMPLETE)
+                .map(Milestone::name)
+                .toList();
+        if (!blockers.isEmpty()) {
+            throw new ConflictException("This milestone cannot be worked on until the milestones it depends on are"
+                    + " complete: " + String.join(", ", blockers));
+        }
     }
 
     private static Milestone requireMilestone(Project project, String milestoneId) {

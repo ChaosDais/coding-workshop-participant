@@ -95,14 +95,17 @@ class EmployeeTest {
     }
 
     @Test
-    void employeesSeeOnlyTheirAssignedProjectsAndMilestonesWithoutMoney() {
+    void employeesSeeOnlyTheirAssignedProjectsWithAllTheirMilestonesButNoMoney() {
         List<JsonObject> visible = body(send("GET", "/projects", null)).getAsJsonArray().asList().stream()
                 .map(JsonElement::getAsJsonObject).toList();
         assertEquals(List.of(projectId), visible.stream().map(project -> project.get("id").getAsString()).toList());
         JsonObject project = visible.get(0);
-        assertEquals(List.of(milestoneId), project.getAsJsonArray("milestones").asList().stream()
-                .map(milestone -> milestone.getAsJsonObject().get("id").getAsString()).toList());
+        // Every milestone of the project, including the teammate's, so dependencies and progress make sense.
+        assertEquals(List.of(milestoneId, teammateMilestoneId), project.getAsJsonArray("milestones").asList()
+                .stream().map(milestone -> milestone.getAsJsonObject().get("id").getAsString()).toList());
         assertFalse(project.has("budget") || project.has("spent"));
+        // Other people's logged hours stay private, and only their own milestones can be changed.
+        assertEquals(403, status(send("GET", milestonePath(teammateMilestoneId) + "/time", null)));
 
         assertEquals(200, status(send("GET", "/projects/" + projectId, null)));
         assertEquals("Access denied", error(send("GET", "/projects/" + otherProjectId, null)));

@@ -276,6 +276,22 @@ export const PRESETS = [
     capture: { milestoneId: 'id' },
   },
   {
+    id: 'add-dependent-milestone',
+    group: 'Milestones',
+    label: 'Add milestone that depends on it',
+    method: 'POST',
+    path: '/projects/{projectId}/milestones',
+    body: json({
+      ...sampleMilestone,
+      name: 'Build',
+      description: 'Implement the approved designs',
+      startDate: '2026-02-01',
+      endDate: '2026-04-01',
+      status: 'TODO',
+      dependsOn: ['{milestoneId}'],
+    }),
+  },
+  {
     id: 'update-milestone',
     group: 'Milestones',
     label: 'Update milestone',

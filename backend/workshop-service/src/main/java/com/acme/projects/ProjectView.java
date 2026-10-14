@@ -6,30 +6,30 @@ import com.acme.models.Project;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
 /**
  * A project as one viewer is allowed to see it. Its {@code progressTime} is the sum of its active milestones'
- * progress. Admins and managers get everything plus {@code spent}, the cost of all logged time. Employees get only
- * the milestones they are assigned to and no money figures, since spending would reveal what colleagues earn.
+ * progress. Admins and managers get everything plus {@code spent}, the cost of all logged time. Employees get every
+ * milestone, so they can see what their work depends on, but no money figures, since budget and spending would
+ * reveal what colleagues earn.
  */
 public record ProjectView(String id, String name, String description, LocalDate startDate, LocalDate endDate,
                          double progressTime, String manager, BigDecimal budget, BigDecimal spent,
-                         CompletionStatus status, List<Milestone> milestones) {
+                         CompletionStatus status, Instant completedAt, List<Milestone> milestones) {
 
     static ProjectView full(Project project, BigDecimal spent) {
         return new ProjectView(project.id(), project.name(), project.description(), project.startDate(),
                 project.endDate(), milestoneProgress(project), project.manager(), project.budget(), spent,
-                project.status(), project.milestones());
+                project.status(), project.completedAt(), project.milestones());
     }
 
-    static ProjectView forEmployee(Project project, String employeeId) {
+    static ProjectView forEmployee(Project project) {
         return new ProjectView(project.id(), project.name(), project.description(), project.startDate(),
                 project.endDate(), milestoneProgress(project), project.manager(), null, null, project.status(),
-                project.milestones().stream()
-                        .filter(milestone -> milestone.assignedEmployees().contains(employeeId))
-                        .toList());
+                project.completedAt(), project.milestones());
     }
 
     /** Hours across all the project's active milestones, rounded to hundredths. */
