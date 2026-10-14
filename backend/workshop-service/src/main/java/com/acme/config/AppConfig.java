@@ -1,43 +1,43 @@
 package com.acme.config;
 
-import com.acme.StatusController;
-import com.acme.audit.AuditController;
-import com.acme.audit.AuditService;
-import com.acme.auth.AuthController;
-import com.acme.auth.AuthService;
-import com.acme.auth.PasswordHasher;
-import com.acme.auth.TokenAuthenticator;
-import com.acme.auth.TokenService;
+import com.acme.controllers.AuditController;
+import com.acme.controllers.AuthController;
+import com.acme.controllers.MilestoneController;
+import com.acme.controllers.ProjectController;
+import com.acme.controllers.StatusController;
+import com.acme.controllers.TimeController;
+import com.acme.controllers.UserController;
 import com.acme.http.Authenticator;
 import com.acme.http.Controller;
 import com.acme.http.Router;
-import com.acme.projects.MilestoneController;
-import com.acme.projects.ProjectController;
-import com.acme.projects.ProjectService;
-import com.acme.repos.AuditStore;
-import com.acme.repos.PostgresAuditStore;
+import com.acme.repos.AuditRepository;
+import com.acme.repos.PostgresAuditRepository;
 import com.acme.repos.PostgresDatabase;
-import com.acme.repos.PostgresProjectStore;
-import com.acme.repos.PostgresRefreshTokenStore;
-import com.acme.repos.PostgresSettingsStore;
-import com.acme.repos.PostgresTimeEntryStore;
-import com.acme.repos.PostgresUserStore;
-import com.acme.repos.ProjectStore;
-import com.acme.repos.RefreshTokenStore;
-import com.acme.repos.SettingsStore;
-import com.acme.repos.TimeEntryStore;
-import com.acme.repos.UserStore;
-import com.acme.timelog.TimeController;
-import com.acme.timelog.TimeService;
-import com.acme.users.UserController;
-import com.acme.users.UserService;
+import com.acme.repos.PostgresProjectRepository;
+import com.acme.repos.PostgresRefreshTokenRepository;
+import com.acme.repos.PostgresSettingsRepository;
+import com.acme.repos.PostgresTimeEntryRepository;
+import com.acme.repos.PostgresUserRepository;
+import com.acme.repos.ProjectRepository;
+import com.acme.repos.RefreshTokenRepository;
+import com.acme.repos.SettingsRepository;
+import com.acme.repos.TimeEntryRepository;
+import com.acme.repos.UserRepository;
+import com.acme.services.AuditService;
+import com.acme.services.AuthService;
+import com.acme.services.PasswordHasher;
+import com.acme.services.ProjectService;
+import com.acme.services.TimeService;
+import com.acme.services.TokenAuthenticator;
+import com.acme.services.TokenService;
+import com.acme.services.UserService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Clock;
 import java.util.List;
 
-/** Wires the stores, services and controllers; the database settings come from the POSTGRES_* variables. */
+/** Wires the repositories, services and controllers; the database settings come from the POSTGRES_* variables. */
 @Configuration
 public class AppConfig {
     private static final int BCRYPT_STRENGTH = 10;
@@ -48,33 +48,33 @@ public class AppConfig {
     }
 
     @Bean
-    public ProjectStore projectStore(PostgresDatabase database) {
-        return new PostgresProjectStore(database);
+    public ProjectRepository projectRepository(PostgresDatabase database) {
+        return new PostgresProjectRepository(database);
     }
 
     @Bean
-    public AuditStore auditStore(PostgresDatabase database) {
-        return new PostgresAuditStore(database);
+    public AuditRepository auditRepository(PostgresDatabase database) {
+        return new PostgresAuditRepository(database);
     }
 
     @Bean
-    public UserStore userStore(PostgresDatabase database) {
-        return new PostgresUserStore(database);
+    public UserRepository userRepository(PostgresDatabase database) {
+        return new PostgresUserRepository(database);
     }
 
     @Bean
-    public RefreshTokenStore refreshTokenStore(PostgresDatabase database) {
-        return new PostgresRefreshTokenStore(database);
+    public RefreshTokenRepository refreshTokenRepository(PostgresDatabase database) {
+        return new PostgresRefreshTokenRepository(database);
     }
 
     @Bean
-    public SettingsStore settingsStore(PostgresDatabase database) {
-        return new PostgresSettingsStore(database);
+    public SettingsRepository settingsRepository(PostgresDatabase database) {
+        return new PostgresSettingsRepository(database);
     }
 
     @Bean
-    public TimeEntryStore timeEntryStore(PostgresDatabase database) {
-        return new PostgresTimeEntryStore(database);
+    public TimeEntryRepository timeEntryRepository(PostgresDatabase database) {
+        return new PostgresTimeEntryRepository(database);
     }
 
     @Bean
@@ -88,42 +88,45 @@ public class AppConfig {
     }
 
     @Bean
-    public TokenService tokenService(SettingsStore settingsStore, RefreshTokenStore refreshTokenStore, Clock clock) {
-        return new TokenService(settingsStore, refreshTokenStore, clock);
+    public TokenService tokenService(SettingsRepository settingsRepository,
+                                     RefreshTokenRepository refreshTokenRepository, Clock clock) {
+        return new TokenService(settingsRepository, refreshTokenRepository, clock);
     }
 
     @Bean
-    public Authenticator authenticator(TokenService tokenService, UserStore userStore) {
-        return new TokenAuthenticator(tokenService, userStore);
+    public Authenticator authenticator(TokenService tokenService, UserRepository userRepository) {
+        return new TokenAuthenticator(tokenService, userRepository);
     }
 
     @Bean
-    public AuditService auditService(AuditStore auditStore) {
-        return new AuditService(auditStore);
+    public AuditService auditService(AuditRepository auditRepository) {
+        return new AuditService(auditRepository);
     }
 
     @Bean
-    public AuthService authService(UserStore userStore, PasswordHasher passwordHasher, TokenService tokenService,
-                                   AuditService auditService) {
-        return new AuthService(userStore, passwordHasher, tokenService, auditService);
-    }
-
-    @Bean
-    public UserService userService(UserStore userStore, ProjectStore projectStore, PasswordHasher passwordHasher,
+    public AuthService authService(UserRepository userRepository, PasswordHasher passwordHasher,
                                    TokenService tokenService, AuditService auditService) {
-        return new UserService(userStore, projectStore, passwordHasher, tokenService, auditService);
+        return new AuthService(userRepository, passwordHasher, tokenService, auditService);
     }
 
     @Bean
-    public ProjectService projectService(ProjectStore projectStore, UserStore userStore,
-                                         TimeEntryStore timeEntryStore, AuditService auditService, Clock clock) {
-        return new ProjectService(projectStore, userStore, timeEntryStore, auditService, clock);
+    public UserService userService(UserRepository userRepository, ProjectRepository projectRepository,
+                                   PasswordHasher passwordHasher, TokenService tokenService,
+                                   AuditService auditService) {
+        return new UserService(userRepository, projectRepository, passwordHasher, tokenService, auditService);
     }
 
     @Bean
-    public TimeService timeService(TimeEntryStore timeEntryStore, ProjectStore projectStore, UserStore userStore,
-                                   AuditService auditService, Clock clock) {
-        return new TimeService(timeEntryStore, projectStore, userStore, auditService, clock);
+    public ProjectService projectService(ProjectRepository projectRepository, UserRepository userRepository,
+                                         TimeEntryRepository timeEntryRepository, AuditService auditService,
+                                         Clock clock) {
+        return new ProjectService(projectRepository, userRepository, timeEntryRepository, auditService, clock);
+    }
+
+    @Bean
+    public TimeService timeService(TimeEntryRepository timeEntryRepository, ProjectRepository projectRepository,
+                                   UserRepository userRepository, AuditService auditService, Clock clock) {
+        return new TimeService(timeEntryRepository, projectRepository, userRepository, auditService, clock);
     }
 
     /**

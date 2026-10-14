@@ -165,7 +165,8 @@ class UsersTest {
         String employeeId = app.createUser(token, "employee@example.com", "EMPLOYEE", null);
         String refreshToken = app.signIn("employee@example.com", PASSWORD).get("refreshToken").getAsString();
 
-        assertEquals(204, status(send("PUT", "/users/" + employeeId + "/password", "{\"password\": \"reset-pass-1\"}")));
+        assertEquals(204, status(send("PUT", "/users/" + employeeId + "/password",
+                "{\"password\": \"reset-pass-1\"}")));
         assertEquals(401, status(app.send("POST", "/auth/refresh", "{\"refreshToken\": \"" + refreshToken + "\"}",
                 null)));
         app.signIn("employee@example.com", "reset-pass-1");

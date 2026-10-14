@@ -1,5 +1,7 @@
 package com.acme.models;
 
+import com.acme.utils.Checks;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;

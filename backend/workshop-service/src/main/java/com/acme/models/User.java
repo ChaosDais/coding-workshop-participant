@@ -1,12 +1,14 @@
 package com.acme.models;
 
+import com.acme.utils.Checks;
+
 import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
  * An account. A blank id is replaced with a generated one; only employees have a manager.
  * Job type and salary are optional, since accounts created before they existed have neither.
- * The password hash is kept by the store and is never part of this record, so it cannot leak into a response.
+ * The password hash is kept by the repository and is never part of this record, so it cannot leak into a response.
  */
 public record User(String id, String email, String name, Role role, String managerId, String jobType,
                    BigDecimal salary, boolean archived) {

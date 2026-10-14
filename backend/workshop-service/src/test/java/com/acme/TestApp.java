@@ -1,20 +1,20 @@
 package com.acme;
 
-import com.acme.audit.AuditService;
-import com.acme.auth.AuthService;
-import com.acme.auth.PasswordHasher;
-import com.acme.auth.TokenAuthenticator;
-import com.acme.auth.TokenService;
 import com.acme.config.AppConfig;
-import com.acme.projects.ProjectService;
-import com.acme.repos.InMemoryAuditStore;
-import com.acme.repos.InMemoryProjectStore;
-import com.acme.repos.InMemoryRefreshTokenStore;
-import com.acme.repos.InMemoryTimeEntryStore;
-import com.acme.repos.InMemorySettingsStore;
-import com.acme.repos.InMemoryUserStore;
-import com.acme.timelog.TimeService;
-import com.acme.users.UserService;
+import com.acme.repos.InMemoryAuditRepository;
+import com.acme.repos.InMemoryProjectRepository;
+import com.acme.repos.InMemoryRefreshTokenRepository;
+import com.acme.repos.InMemorySettingsRepository;
+import com.acme.repos.InMemoryTimeEntryRepository;
+import com.acme.repos.InMemoryUserRepository;
+import com.acme.services.AuditService;
+import com.acme.services.AuthService;
+import com.acme.services.PasswordHasher;
+import com.acme.services.ProjectService;
+import com.acme.services.TimeService;
+import com.acme.services.TokenAuthenticator;
+import com.acme.services.TokenService;
+import com.acme.services.UserService;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -29,7 +29,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * The whole service wired with in-memory stores and a controllable clock, called through the Lambda entry point
+ * The whole service wired with in-memory repositories and a controllable clock, called through the Lambda entry point
  * with events shaped like a function URL's.
  */
 class TestApp {
@@ -37,20 +37,20 @@ class TestApp {
     static final String PASSWORD = "correct-horse-1";
 
     final MutableClock clock = new MutableClock();
-    final InMemoryUserStore users = new InMemoryUserStore();
-    final InMemoryRefreshTokenStore refreshTokens = new InMemoryRefreshTokenStore();
+    final InMemoryUserRepository users = new InMemoryUserRepository();
+    final InMemoryRefreshTokenRepository refreshTokens = new InMemoryRefreshTokenRepository();
     final Handler handler;
 
     TestApp() {
-        this(new InMemoryProjectStore());
+        this(new InMemoryProjectRepository());
     }
 
-    TestApp(InMemoryProjectStore projects) {
-        AuditService audit = new AuditService(new InMemoryAuditStore());
-        InMemoryTimeEntryStore timeEntries = new InMemoryTimeEntryStore(projects);
+    TestApp(InMemoryProjectRepository projects) {
+        AuditService audit = new AuditService(new InMemoryAuditRepository());
+        InMemoryTimeEntryRepository timeEntries = new InMemoryTimeEntryRepository(projects);
         // The lowest BCrypt cost keeps the tests fast; production uses 10.
         PasswordHasher passwords = new PasswordHasher(4);
-        TokenService tokens = new TokenService(new InMemorySettingsStore(), refreshTokens, clock);
+        TokenService tokens = new TokenService(new InMemorySettingsRepository(), refreshTokens, clock);
         AppConfig config = new AppConfig();
         handler = new Handler(config.router(new TokenAuthenticator(tokens, users),
                 new AuthService(users, passwords, tokens, audit),

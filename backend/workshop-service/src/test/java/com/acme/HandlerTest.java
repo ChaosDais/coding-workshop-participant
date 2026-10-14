@@ -1,6 +1,6 @@
 package com.acme;
 
-import com.acme.repos.InMemoryProjectStore;
+import com.acme.repos.InMemoryProjectRepository;
 import com.acme.repos.StorageException;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -204,7 +204,7 @@ class HandlerTest {
 
     @Test
     void databaseFailuresBecomeServerErrors() {
-        app = new TestApp(new InMemoryProjectStore() {
+        app = new TestApp(new InMemoryProjectRepository() {
             @Override
             public List<com.acme.models.Project> findAll(boolean archived) {
                 throw new StorageException("connection refused", null);

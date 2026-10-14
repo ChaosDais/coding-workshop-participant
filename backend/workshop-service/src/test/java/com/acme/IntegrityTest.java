@@ -2,7 +2,7 @@ package com.acme;
 
 import com.acme.models.Milestone;
 import com.acme.models.Project;
-import com.acme.repos.InMemoryProjectStore;
+import com.acme.repos.InMemoryProjectRepository;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,8 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Completion times, frozen dates, milestone dates inside the project, and milestone dependencies. */
 class IntegrityTest {
-    private final InMemoryProjectStore store = new InMemoryProjectStore();
-    private final TestApp app = new TestApp(store);
+    private final InMemoryProjectRepository repository = new InMemoryProjectRepository();
+    private final TestApp app = new TestApp(repository);
     private String token;
     private String managerId;
     private String employeeId;
@@ -117,7 +117,8 @@ class IntegrityTest {
         assertEquals(200, status(send("PUT", milestones() + "/" + design, milestone("Design", "2026-02-01",
                 "2026-04-01", "IN_PROGRESS"))));
 
-        assertEquals(200, status(send("PUT", "/projects/" + projectId, project("2026-01-01", "2026-12-31", "COMPLETE"))));
+        assertEquals(200, status(send("PUT", "/projects/" + projectId,
+                project("2026-01-01", "2026-12-31", "COMPLETE"))));
         assertEquals("The dates of a completed project are frozen; reopen it to change them",
                 error(send("PUT", "/projects/" + projectId, project("2026-01-01", "2027-06-30", "COMPLETE"))));
         assertEquals(409, status(send("PUT", milestones() + "/" + design, milestone("Design", "2026-02-01",
@@ -145,10 +146,10 @@ class IntegrityTest {
 
     @Test
     void ruleViolationsSavedBeforeTheRulesStayEditable() {
-        Project stored = store.findById(projectId).orElseThrow();
+        Project stored = repository.findById(projectId).orElseThrow();
         Milestone outside = new Milestone("legacy", "Legacy", null, LocalDate.of(2025, 1, 1),
                 LocalDate.of(2025, 2, 1), 0, List.of(), null, null, null);
-        assertTrue(store.replace(stored.withMilestones(List.of(outside))));
+        assertTrue(repository.replace(stored.withMilestones(List.of(outside))));
 
         // Renaming the project does not touch the milestone's dates, so the old milestone is not re-checked.
         assertEquals(200, status(send("PUT", "/projects/" + projectId,

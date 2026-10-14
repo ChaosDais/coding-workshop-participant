@@ -102,7 +102,8 @@ class ManagerTest {
         assertEquals(200, status(app.send("PUT", "/projects/" + projectId, described, adminToken)));
 
         // A manager's update may leave the description out or repeat it; either way it is kept.
-        Map<String, Object> withoutIt = send("PUT", "/projects/" + projectId, project("Apollo", managerId, "IN_PROGRESS"));
+        Map<String, Object> withoutIt = send("PUT", "/projects/" + projectId,
+                project("Apollo", managerId, "IN_PROGRESS"));
         assertEquals(200, status(withoutIt));
         assertEquals("Crewed lunar landing", body(withoutIt).getAsJsonObject().get("description").getAsString());
         assertEquals(200, status(send("PUT", "/projects/" + projectId, described)));
@@ -167,7 +168,8 @@ class ManagerTest {
 
         assertEquals(200, status(send("PUT", "/projects/" + projectId + "/milestones/" + milestoneId,
                 milestone("IN_PROGRESS", employeeId))));
-        assertEquals(400, status(send("POST", "/projects/" + projectId + "/milestones", milestone("TODO", employeeId))));
+        assertEquals(400, status(send("POST", "/projects/" + projectId + "/milestones",
+                milestone("TODO", employeeId))));
     }
 
     /** The team rule binds admins too; moving the employee to the project's manager is how they switch teams. */

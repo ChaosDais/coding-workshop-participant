@@ -59,18 +59,22 @@ backend/
     pom.xml                         Java 21 build, shaded jar; Spring, PostgreSQL JDBC, BCrypt, java-jwt, Gson
     src/main/java/com/acme/
       Handler.java                  Lambda entry point
-      StatusController.java         GET /
-      config/AppConfig.java         Spring wiring and the list of controllers
-      http/                         routing, request/response, JSON, access rules
-      auth/                         sign-in, tokens, passwords
-      users/                        account management
-      projects/                     projects, milestones, integrity rules
-      timelog/                      time logging and timers
-      audit/                        audit log
+      models/                       domain records and enums: User, Project, Milestone, TimeEntry, AuditEntry,
+                                    Role, CompletionStatus, and ProjectView (a project as one role may see it)
+      repos/                        database access: *Repository interfaces, their Postgres* implementations,
+                                    PostgresDatabase (connection, transactions, schema), StorageException
+      services/                     business logic and validation: AuthService, TokenService,
+                                    TokenAuthenticator, PasswordHasher, UserService, ProjectService,
+                                    ProjectRules, TimeService, AuditService
+      controllers/                  HTTP routes and their access rules, one controller per area:
+                                    Status, Auth, User, Project, Milestone, Time, Audit
+      utils/                        shared helpers: Checks (field validation used by the models)
+      http/                         routing plumbing: Router, ApiRequest, ApiResponse, Access, Json
       errors/                       domain exceptions mapped to HTTP statuses
-      models/                       records with built-in validation
-      repos/                        store interfaces and PostgreSQL implementations
-    src/test/java/com/acme/         API-level tests, test doubles, PostgreSQL tests
+      config/AppConfig.java         Spring wiring and the list of controllers
+    src/test/java/com/acme/         API-level tests per role, TestApp harness
+      repos/                        in-memory test doubles of every repository, PostgreSQL repository tests
+      services/, models/            unit tests
   _examples/                        workshop templates (not deployed)
 frontend/
   src/pages/ApiTester.jsx           request builder, remembered ids and tokens, token auto-refresh
@@ -83,16 +87,17 @@ docs/                               workshop guides
 
 ## Backend structure
 
-The code is organised by feature, with each feature split into layers:
+The code is organised by layer, one package per layer. Each layer only calls the one below it:
+controllers call services, services call repositories, and all of them use the models.
 
-| Layer | Knows about | Responsibility |
-|---|---|---|
-| `Handler` | the Lambda event | Turns the event into an `ApiRequest`, dispatches it, maps exceptions to responses |
-| `http/Router` | routes and their `Access` | Matches method and path, enforces authentication and role, fills `{placeholders}` |
-| Controllers | HTTP | Declare routes with their access rule; read the request; call a service; build the response |
-| Services | business rules | Data scoping per role, validation across records, auditing; know nothing about HTTP |
-| Stores (`repos/`) | SQL | Persist records; multi-step writes run in one transaction |
-| Models (`models/`) | — | Immutable records that validate themselves when constructed |
+| Layer | Package | Knows about | Responsibility |
+|---|---|---|---|
+| Entry point | `Handler` | the Lambda event | Turns the event into an `ApiRequest`, dispatches it, maps exceptions to responses |
+| Routing | `http/` | routes and their `Access` | Matches method and path, enforces authentication and role, fills `{placeholders}` |
+| Controllers | `controllers/` | HTTP | Declare routes with their access rule; read the request; call a service; build the response |
+| Services | `services/` | business rules | Data scoping per role, validation across records, auditing; know nothing about HTTP |
+| Repositories | `repos/` | SQL | Persist records; multi-step writes run in one transaction |
+| Models | `models/` | — | Immutable records that validate themselves when constructed, using `utils/Checks` |
 
 ### Request lifecycle
 
@@ -104,7 +109,7 @@ The code is organised by feature, with each feature split into layers:
    and loads the user from the database. It then checks the user's role against the route. Failures → 401 or 403.
 4. The controller parses the body into a model (`Json` registers adapters for dates, timestamps and statuses) and
    calls the service with the signed-in user.
-5. The service applies the per-role data rules and business rules, writes through a store, and records an audit
+5. The service applies the per-role data rules and business rules, writes through a repository, and records an audit
    entry.
 6. The controller returns an `ApiResponse`; `Handler` turns it into the `{statusCode, headers, body}` map the
    function URL sends back. Any exception on the way becomes an error response (see [Errors](#errors)).
@@ -248,7 +253,7 @@ Some fields are hidden even where the record is visible, because they would reve
     those are reassigned.
 
 ### Project and milestone integrity
-All of these live in `projects/ProjectRules.java`, which every project and milestone write goes through:
+All of these live in `services/ProjectRules.java`, which every project and milestone write goes through:
 
 - **Completion times**: `completedAt` is set when a project or milestone becomes COMPLETE, kept while it stays
   complete, and cleared if it is reopened. Values sent by clients are ignored.
@@ -319,18 +324,20 @@ The Lambda reads these environment variables, set by Terraform (`infra/locals.tf
 | `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_NAME`, `POSTGRES_USER`, `POSTGRES_PASS` | Database connection |
 | `IS_LOCAL` | `true` locally (no SSL); otherwise the connection requires SSL for Aurora |
 
-Connections time out after 5 seconds and queries after 20, well inside CloudFront's 30-second origin timeout, so
-a database problem produces a JSON 500 rather than a CloudFront 504. Secrets for tokens are not configuration;
-they are generated and stored in the database.
+Each connection attempt times out after 5 seconds and each query after 20. Aurora Serverless pauses after 5 idle
+minutes and takes about 15 seconds to resume, so `PostgresDatabase` keeps retrying a connection for up to 22
+seconds while the server is unreachable; errors that waiting cannot fix, such as a wrong password, fail at once.
+All of this stays inside CloudFront's 30-second origin timeout, so a database problem produces a JSON 500 rather
+than a CloudFront 504. Secrets for tokens are not configuration; they are generated and stored in the database.
 
 ## Testing
 
 ```sh
-# Backend: API-level tests run against in-memory test doubles of every store
+# Backend: API-level tests run against in-memory test doubles of every repository
 cd backend/workshop-service
 JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 mvn test
 
-# Also run the PostgreSQL store tests (each runs in its own schema, dropped afterwards)
+# Also run the PostgreSQL repository tests (each runs in its own schema, dropped afterwards)
 POSTGRES_TEST_URL='jdbc:postgresql://localhost:5432/postgres?user=…&password=…' mvn test
 
 # Frontend
@@ -345,21 +352,24 @@ cd frontend && npm test
 | `ManagerTest` | Every manager permission, allowed and denied |
 | `EmployeeTest` | Employee visibility, profile edits, review status, time logging, timer and cap, corrections, cost |
 | `IntegrityTest` | Completion times, frozen dates, date ranges, dependencies |
-| `PostgresStoresTest` | Every PostgreSQL store, plus schema upgrades from earlier versions |
+| `PostgresRepositoriesTest` | Every PostgreSQL repository, plus schema upgrades from earlier versions |
+| `PostgresDatabaseTest` | Retrying the connection while a paused Aurora database resumes |
 | `timer.test.js`, `apiClient.test.js` | Timer maths and placeholder filling in the frontend |
 
-`TestApp` wires the whole service with in-memory stores and a controllable clock, and calls it through the Lambda
+`TestApp` wires the whole service with in-memory repositories and a controllable clock, and calls it through the Lambda
 entry point with function-URL-shaped events, so the API tests exercise routing and authorization exactly as
 deployed.
 
 ## Adding an endpoint
 
-1. Register the route in the feature's controller with an explicit `Access`: the roles that may call it.
-2. Put the logic in the feature's service, including which records each role may touch, and record an audit
-   entry for any change.
-3. For new data, extend the store interface and both its PostgreSQL implementation and in-memory test double.
-   Add new tables or columns to `PostgresDatabase.SCHEMA` (columns as `ADD COLUMN IF NOT EXISTS`).
-4. A new feature's controller is added to the list in `AppConfig.router`.
+1. Register the route in the matching class in `controllers/` with an explicit `Access`: the roles that may call
+   it.
+2. Put the logic in the matching class in `services/`, including which records each role may touch, and record
+   an audit entry for any change.
+3. For new data, add or change the record in `models/`, then extend the repository interface in `repos/`, its
+   PostgreSQL implementation and its in-memory test double. Add new tables or columns to
+   `PostgresDatabase.SCHEMA` (columns as `ADD COLUMN IF NOT EXISTS`).
+4. A new controller is added to the list in `AppConfig.router`.
 5. Add API tests for every role, allowed and denied, and a preset in `frontend/src/services/presets.js`.
 
 ## Known limitations
