@@ -40,7 +40,8 @@ import java.util.Set;
  * checked when they change, so existing ones stay valid if a user is later archived or moved to another team.
  * Dates, completion times and milestone dependencies follow {@link ProjectRules} on every change.
  * Projects can depend on other projects: only admins set those dependencies, and a project cannot start, nor can
- * any of its milestones, until every project it depends on is complete.
+ * any of its milestones, until every project it depends on is complete. An employee works on at most one unfinished
+ * milestone per project.
  */
 public class ProjectService {
     private final ProjectRepository projects;
@@ -70,7 +71,8 @@ public class ProjectService {
                 .filter(project -> canSee(project, actor))
                 .toList();
         Map<String, BigDecimal> spent = timeEntries.totalCostByProject();
-        return visible.stream().map(project -> view(project, actor, spent)).toList();
+        Map<String, ProjectView.Dependency> summaries = dependencySummaries();
+        return visible.stream().map(project -> view(project, actor, spent, summaries)).toList();
     }
 
     public ProjectView get(String id, User actor) {
@@ -124,13 +126,27 @@ public class ProjectService {
     }
 
     ProjectView view(Project project, User actor) {
-        return view(project, actor, timeEntries.totalCostByProject());
+        return view(project, actor, timeEntries.totalCostByProject(), dependencySummaries());
     }
 
-    private static ProjectView view(Project project, User actor, Map<String, BigDecimal> spent) {
+    private static ProjectView view(Project project, User actor, Map<String, BigDecimal> spent,
+                                    Map<String, ProjectView.Dependency> summaries) {
+        List<ProjectView.Dependency> dependencies = project.dependsOn().stream()
+                .map(id -> summaries.getOrDefault(id, new ProjectView.Dependency(id, null, null, true)))
+                .toList();
         return actor.role() == Role.EMPLOYEE
-                ? ProjectView.forEmployee(project)
-                : ProjectView.full(project, spent.getOrDefault(project.id(), BigDecimal.ZERO));
+                ? ProjectView.forEmployee(project, dependencies)
+                : ProjectView.full(project, spent.getOrDefault(project.id(), BigDecimal.ZERO), dependencies);
+    }
+
+    /** Every project, active or archived, as the short summary shown for a dependency. */
+    private Map<String, ProjectView.Dependency> dependencySummaries() {
+        Map<String, ProjectView.Dependency> summaries = new HashMap<>();
+        projects.findAll(true).forEach(project -> summaries.put(project.id(),
+                new ProjectView.Dependency(project.id(), project.name(), project.status(), true)));
+        projects.findAll(false).forEach(project -> summaries.put(project.id(),
+                new ProjectView.Dependency(project.id(), project.name(), project.status(), false)));
+        return summaries;
     }
 
     public ProjectView create(Project project, User actor) {
@@ -142,6 +158,7 @@ public class ProjectService {
         project.milestones().forEach(milestone -> requireEmployees(milestone, Set.of(), project.manager()));
         Project created = ProjectRules.apply(null, project, clock.instant());
         checkProjectDependencies(null, created);
+        requireOneOpenMilestonePerEmployee(null, created);
         projects.insert(created);
         audit("project_created", created, null, actor);
         return view(created, actor);
@@ -180,9 +197,11 @@ public class ProjectService {
         }
         Project updated = ProjectRules.apply(existing, new Project(id, changes.name(), description,
                 changes.startDate(), changes.endDate(), changes.progressTime(), changes.manager(), changes.budget(),
-                changes.status(), replaceMilestones ? changes.milestones() : existing.milestones(), null, dependsOn),
+                changes.status(), replaceMilestones ? changes.milestones() : existing.milestones(), null, dependsOn,
+                changes.expectedHours(), null),
                 clock.instant());
         checkProjectDependencies(existing, updated);
+        requireOneOpenMilestonePerEmployee(existing, updated);
         save(updated);
         audit("project_updated", updated, null, actor);
         return view(updated, actor);
@@ -222,6 +241,7 @@ public class ProjectService {
         milestones.add(milestone);
         Project updated = ProjectRules.apply(project, project.withMilestones(milestones), clock.instant());
         checkProjectDependencies(project, updated);
+        requireOneOpenMilestonePerEmployee(project, updated);
         save(updated);
         audit("milestone_added", project, milestone, actor);
         return updated.milestones().get(milestones.size() - 1);
@@ -232,12 +252,13 @@ public class ProjectService {
         int index = requireMilestoneIndex(project, milestoneId);
         Milestone changed = new Milestone(milestoneId, changes.name(), changes.description(), changes.startDate(),
                 changes.endDate(), changes.progressTime(), changes.assignedEmployees(), changes.status(), null,
-                changes.dependsOn());
+                changes.dependsOn(), changes.expectedHours(), null);
         requireEmployees(changed, Set.copyOf(project.milestones().get(index).assignedEmployees()), project.manager());
         List<Milestone> milestones = new ArrayList<>(project.milestones());
         milestones.set(index, changed);
         Project updated = ProjectRules.apply(project, project.withMilestones(milestones), clock.instant());
         checkProjectDependencies(project, updated);
+        requireOneOpenMilestonePerEmployee(project, updated);
         save(updated);
         audit("milestone_updated", project, changed, actor);
         return updated.milestones().get(index);
@@ -271,9 +292,11 @@ public class ProjectService {
         milestones.set(index, milestone.withStatus(status, null));
         Project updated = ProjectRules.apply(project, project.withMilestones(milestones), clock.instant());
         checkProjectDependencies(project, updated);
+        requireOneOpenMilestonePerEmployee(project, updated);
         Milestone changed = updated.milestones().get(index);
         // Only the status and completion time are written, so progress logged meanwhile is not overwritten.
-        if (!projects.setMilestoneStatus(projectId, milestoneId, status, changed.completedAt())) {
+        if (!projects.setMilestoneStatus(projectId, milestoneId, status, changed.completedAt(),
+                changed.statusChangedAt())) {
             // Archived by another request between the lookup and the write.
             throw new NotFoundException("Milestone " + milestoneId + " not found");
         }
@@ -282,6 +305,139 @@ public class ProjectService {
         details.put("to", status.name());
         audit("milestone_status_changed", project, milestone, actor, details);
         return changed;
+    }
+
+    /** Adds an employee from the project manager's team to a milestone. */
+    public Milestone assign(String projectId, String milestoneId, String employeeId, User actor) {
+        Project project = requireEditable(projectId, actor);
+        Milestone milestone = project.milestones().get(requireMilestoneIndex(project, milestoneId));
+        if (employeeId == null || employeeId.isBlank()) {
+            throw new IllegalArgumentException("employeeId is required");
+        }
+        if (milestone.assignedEmployees().contains(employeeId)) {
+            throw new ConflictException(employeeName(employeeId) + " is already assigned to " + milestone.name());
+        }
+        List<String> assignees = new ArrayList<>(milestone.assignedEmployees());
+        assignees.add(employeeId);
+        requireEmployees(withAssignees(milestone, assignees), Set.copyOf(milestone.assignedEmployees()),
+                project.manager());
+        requireOneOpenMilestonePerEmployee(project, replaceAssignees(project, Map.of(milestoneId, assignees)));
+        setAssignees(project, Map.of(milestoneId, assignees));
+        auditAssignment("employee_assigned", project, milestone, employeeId, actor, Map.of());
+        return withAssignees(milestone, assignees);
+    }
+
+    /** Takes an employee off a milestone. */
+    public void unassign(String projectId, String milestoneId, String employeeId, User actor) {
+        Project project = requireEditable(projectId, actor);
+        Milestone milestone = project.milestones().get(requireMilestoneIndex(project, milestoneId));
+        if (!milestone.assignedEmployees().contains(employeeId)) {
+            throw new NotFoundException(employeeName(employeeId) + " is not assigned to " + milestone.name());
+        }
+        List<String> assignees = new ArrayList<>(milestone.assignedEmployees());
+        assignees.remove(employeeId);
+        setAssignees(project, Map.of(milestoneId, assignees));
+        auditAssignment("employee_unassigned", project, milestone, employeeId, actor, Map.of());
+    }
+
+    /**
+     * Moves an employee from one milestone of the project to another, in one step, so they are never left on both
+     * or on neither. They must be on the project manager's team to join the new milestone.
+     */
+    public Milestone move(String projectId, String fromMilestoneId, String employeeId, String toMilestoneId,
+                          User actor) {
+        Project project = requireEditable(projectId, actor);
+        Milestone from = project.milestones().get(requireMilestoneIndex(project, fromMilestoneId));
+        if (toMilestoneId == null || toMilestoneId.isBlank()) {
+            throw new IllegalArgumentException("toMilestoneId is required");
+        }
+        Milestone to = project.milestones().get(requireMilestoneIndex(project, toMilestoneId));
+        if (from.id().equals(to.id())) {
+            throw new IllegalArgumentException("Choose a different milestone to move to");
+        }
+        if (!from.assignedEmployees().contains(employeeId)) {
+            throw new NotFoundException(employeeName(employeeId) + " is not assigned to " + from.name());
+        }
+        if (to.assignedEmployees().contains(employeeId)) {
+            throw new ConflictException(employeeName(employeeId) + " is already assigned to " + to.name());
+        }
+        List<String> leaving = new ArrayList<>(from.assignedEmployees());
+        leaving.remove(employeeId);
+        List<String> joining = new ArrayList<>(to.assignedEmployees());
+        joining.add(employeeId);
+        requireEmployees(withAssignees(to, joining), Set.copyOf(to.assignedEmployees()), project.manager());
+        requireOneOpenMilestonePerEmployee(project,
+                replaceAssignees(project, Map.of(from.id(), leaving, to.id(), joining)));
+        setAssignees(project, Map.of(from.id(), leaving, to.id(), joining));
+        auditAssignment("employee_reassigned", project, to, employeeId, actor,
+                Map.of("fromMilestoneId", from.id(), "fromMilestoneName", from.name()));
+        return withAssignees(to, joining);
+    }
+
+    /**
+     * An employee works on at most one unfinished milestone of a project at a time (they can still be on several
+     * projects). Checked for people newly put to work on an unfinished milestone, which includes reopening a
+     * completed one, so data saved before the rule stays editable.
+     */
+    private void requireOneOpenMilestonePerEmployee(Project before, Project after) {
+        for (Milestone milestone : after.milestones()) {
+            if (milestone.status() == CompletionStatus.COMPLETE) {
+                continue;
+            }
+            Set<String> alreadyWorking = before == null ? Set.of() : before.milestones().stream()
+                    .filter(previous -> previous.id().equals(milestone.id())
+                            && previous.status() != CompletionStatus.COMPLETE)
+                    .findFirst()
+                    .map(previous -> Set.copyOf(previous.assignedEmployees()))
+                    .orElse(Set.of());
+            for (String employeeId : milestone.assignedEmployees()) {
+                if (alreadyWorking.contains(employeeId)) {
+                    continue;
+                }
+                after.milestones().stream()
+                        .filter(other -> !other.id().equals(milestone.id())
+                                && other.status() != CompletionStatus.COMPLETE
+                                && other.assignedEmployees().contains(employeeId))
+                        .findFirst()
+                        .ifPresent(other -> {
+                            throw new ConflictException(employeeName(employeeId) + " is already working on '"
+                                    + other.name() + "' in this project; an employee works on one unfinished"
+                                    + " milestone per project, so move them instead");
+                        });
+            }
+        }
+    }
+
+    private static Project replaceAssignees(Project project, Map<String, List<String>> assigneesByMilestone) {
+        return project.withMilestones(project.milestones().stream()
+                .map(milestone -> assigneesByMilestone.containsKey(milestone.id())
+                        ? withAssignees(milestone, assigneesByMilestone.get(milestone.id())) : milestone)
+                .toList());
+    }
+
+    private void setAssignees(Project project, Map<String, List<String>> assigneesByMilestone) {
+        if (!projects.setAssignees(project.id(), assigneesByMilestone)) {
+            // Archived by another request between the lookup and the write.
+            throw new NotFoundException("Milestone not found");
+        }
+    }
+
+    private static Milestone withAssignees(Milestone milestone, List<String> assignees) {
+        return new Milestone(milestone.id(), milestone.name(), milestone.description(), milestone.startDate(),
+                milestone.endDate(), milestone.progressTime(), assignees, milestone.status(), milestone.completedAt(),
+                milestone.dependsOn(), milestone.expectedHours(), milestone.statusChangedAt());
+    }
+
+    private String employeeName(String employeeId) {
+        return users.findById(employeeId).map(User::name).orElse("Employee " + employeeId);
+    }
+
+    private void auditAssignment(String action, Project project, Milestone milestone, String employeeId, User actor,
+                                 Map<String, Object> extra) {
+        Map<String, Object> details = new LinkedHashMap<>(extra);
+        details.put("employeeId", employeeId);
+        details.put("employeeName", employeeName(employeeId));
+        audit(action, project, milestone, actor, details);
     }
 
     /** Removes the milestone from the project; the repository keeps it as archived. */

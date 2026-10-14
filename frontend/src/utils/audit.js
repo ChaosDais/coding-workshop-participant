@@ -3,7 +3,8 @@ export const ACTION_GROUPS = {
   Accounts: ['default_admin_created', 'user_created', 'user_updated', 'user_archived', 'user_restored',
     'employee_moved', 'password_reset', 'password_changed', 'profile_updated'],
   Projects: ['project_created', 'project_updated', 'project_archived', 'project_restored'],
-  Milestones: ['milestone_added', 'milestone_updated', 'milestone_status_changed', 'milestone_archived'],
+  Milestones: ['milestone_added', 'milestone_updated', 'milestone_status_changed', 'milestone_archived',
+    'employee_assigned', 'employee_unassigned', 'employee_reassigned'],
   Time: ['time_logged', 'timer_started', 'timer_stopped', 'timer_capped', 'time_corrected'],
 };
 
@@ -46,8 +47,11 @@ export function describeDetails(entry, names = {}) {
     parts.push(`${manager(details.fromManagerId)} → ${manager(details.toManagerId)}`);
   }
   if (details.employeeId) {
-    const employee = names.users?.get(details.employeeId);
-    parts.push(employee ? employee.name : `employee ${details.employeeId.slice(0, 8)}`);
+    parts.push(details.employeeName ?? names.users?.get(details.employeeId)?.name
+      ?? `employee ${details.employeeId.slice(0, 8)}`);
+  }
+  if (details.fromMilestoneName) {
+    parts.push(`from ${details.fromMilestoneName}`);
   }
   if (details.hours) {
     parts.push(details.previousHours ? `${details.previousHours} h → ${details.hours} h` : `${details.hours} h`);

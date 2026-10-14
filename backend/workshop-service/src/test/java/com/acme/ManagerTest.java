@@ -190,6 +190,113 @@ class ManagerTest {
     }
 
     @Test
+    void managersAssignUnassignAndMoveTheirTeamBetweenMilestones() {
+        String designId = body(send("POST", "/projects/" + projectId + "/milestones", milestone("TODO")))
+                .getAsJsonObject().get("id").getAsString();
+        String buildId = body(send("POST", "/projects/" + projectId + "/milestones", milestone("TODO")
+                .replace("Design", "Build"))).getAsJsonObject().get("id").getAsString();
+        String design = "/projects/" + projectId + "/milestones/" + designId;
+
+        Map<String, Object> assigned = send("POST", design + "/assignees", "{\"employeeId\": \"" + employeeId + "\"}");
+        assertEquals(200, status(assigned));
+        assertEquals(List.of(employeeId), assignees(designId));
+        assertEquals(409, status(send("POST", design + "/assignees", "{\"employeeId\": \"" + employeeId + "\"}")));
+        assertEquals("assignedEmployees must be on the project manager's team: " + otherEmployeeId,
+                error(send("POST", design + "/assignees", "{\"employeeId\": \"" + otherEmployeeId + "\"}")));
+
+        Map<String, Object> moved = send("POST", design + "/assignees/" + employeeId + "/move",
+                "{\"toMilestoneId\": \"" + buildId + "\"}");
+        assertEquals(200, status(moved));
+        assertEquals(List.of(), assignees(designId));
+        assertEquals(List.of(employeeId), assignees(buildId));
+        assertEquals(404, status(send("POST", design + "/assignees/" + employeeId + "/move",
+                "{\"toMilestoneId\": \"" + buildId + "\"}")));
+
+        JsonObject audit = body(app.send("GET", "/audit?action=employee_reassigned", null, adminToken)).getAsJsonArray()
+                .get(0).getAsJsonObject().getAsJsonObject("details");
+        assertEquals("Design", audit.get("fromMilestoneName").getAsString());
+        assertEquals("Build", audit.get("milestoneName").getAsString());
+        assertEquals("employee@example.com", audit.get("employeeName").getAsString());
+
+        String build = "/projects/" + projectId + "/milestones/" + buildId;
+        assertEquals(204, status(send("DELETE", build + "/assignees/" + employeeId, null)));
+        assertEquals(List.of(), assignees(buildId));
+        assertEquals(404, status(send("DELETE", build + "/assignees/" + employeeId, null)));
+        // Only their own projects.
+        assertEquals(403, status(send("POST", "/projects/" + otherProjectId + "/milestones/x/assignees",
+                "{\"employeeId\": \"" + employeeId + "\"}")));
+    }
+
+    @Test
+    void anEmployeeWorksOnOneUnfinishedMilestonePerProject() {
+        String designId = body(send("POST", "/projects/" + projectId + "/milestones", milestone("IN_PROGRESS",
+                employeeId))).getAsJsonObject().get("id").getAsString();
+        String buildId = body(send("POST", "/projects/" + projectId + "/milestones", milestone("TODO")
+                .replace("Design", "Build"))).getAsJsonObject().get("id").getAsString();
+        String build = "/projects/" + projectId + "/milestones/" + buildId;
+
+        Map<String, Object> second = send("POST", build + "/assignees", "{\"employeeId\": \"" + employeeId + "\"}");
+        assertEquals(409, status(second));
+        assertTrue(error(second).startsWith("employee@example.com is already working on 'Design' in this project"));
+        assertEquals(409, status(send("POST", "/projects/" + projectId + "/milestones",
+                milestone("TODO", employeeId).replace("Design", "Test"))));
+        assertEquals(409, status(send("PUT", build, milestone("TODO", employeeId).replace("Design", "Build"))));
+
+        // Moving is how they switch, and other projects are fine.
+        assertEquals(200, status(send("POST", "/projects/" + projectId + "/milestones/" + designId + "/assignees/"
+                + employeeId + "/move", "{\"toMilestoneId\": \"" + buildId + "\"}")));
+        String apollo2 = body(app.send("POST", "/projects", project("Apollo 2", managerId, "TODO"), adminToken))
+                .getAsJsonObject().get("id").getAsString();
+        assertEquals(201, status(send("POST", "/projects/" + apollo2 + "/milestones", milestone("TODO", employeeId))));
+
+        // A completed milestone does not count, but reopening it puts its people back to work.
+        assertEquals(200, status(send("PUT", "/projects/" + projectId + "/milestones/" + buildId + "/status",
+                "{\"status\": \"COMPLETE\"}")));
+        assertEquals(200, status(send("POST", "/projects/" + projectId + "/milestones/" + designId + "/assignees",
+                "{\"employeeId\": \"" + employeeId + "\"}")));
+        assertEquals(409, status(send("PUT", "/projects/" + projectId + "/milestones/" + buildId + "/status",
+                "{\"status\": \"IN_PROGRESS\"}")));
+    }
+
+    @Test
+    void changingAssigneesLeavesLoggedProgressAlone() {
+        String designId = body(send("POST", "/projects/" + projectId + "/milestones", milestone("IN_PROGRESS",
+                employeeId))).getAsJsonObject().get("id").getAsString();
+        String employeeToken = app.signIn("employee@example.com", PASSWORD).get("accessToken").getAsString();
+        assertEquals(201, status(app.send("POST", "/projects/" + projectId + "/milestones/" + designId + "/time",
+                "{\"hours\": 3}", employeeToken)));
+
+        String extraId = app.createUser(adminToken, "extra@example.com", "EMPLOYEE", managerId);
+        assertEquals(200, status(send("POST", "/projects/" + projectId + "/milestones/" + designId + "/assignees",
+                "{\"employeeId\": \"" + extraId + "\"}")));
+        JsonObject stored = body(send("GET", "/projects/" + projectId, null)).getAsJsonObject()
+                .getAsJsonArray("milestones").get(0).getAsJsonObject();
+        assertEquals(7.0, stored.get("progressTime").getAsDouble());
+    }
+
+    private List<String> assignees(String milestoneId) {
+        return body(send("GET", "/projects/" + projectId, null)).getAsJsonObject().getAsJsonArray("milestones")
+                .asList().stream().map(element -> element.getAsJsonObject())
+                .filter(found -> found.get("id").getAsString().equals(milestoneId)).findFirst().orElseThrow()
+                .getAsJsonArray("assignedEmployees").asList().stream().map(element -> element.getAsString())
+                .toList();
+    }
+
+    @Test
+    void managersSeeTheNameAndStatusOfDependenciesOwnedByOtherManagers() {
+        assertEquals(200, status(app.send("PUT", "/projects/" + projectId, project("Apollo", managerId, "TODO")
+                .replaceFirst("\\{", "{\"dependsOn\": [\"" + otherProjectId + "\"], "), adminToken)));
+        assertEquals(403, status(send("GET", "/projects/" + otherProjectId, null)));
+
+        JsonObject dependency = body(send("GET", "/projects/" + projectId, null)).getAsJsonObject()
+                .getAsJsonArray("dependencies").get(0).getAsJsonObject();
+        assertEquals(otherProjectId, dependency.get("id").getAsString());
+        assertEquals("Gemini", dependency.get("name").getAsString());
+        assertEquals("TODO", dependency.get("status").getAsString());
+        assertFalse(dependency.get("archived").getAsBoolean());
+    }
+
+    @Test
     void managersSeeTheirTeamWithoutSalaries() {
         assertEquals(201, status(app.send("POST", "/users", """
                 {"email": "paid@example.com", "name": "Paid", "role": "EMPLOYEE", "managerId": "%s",

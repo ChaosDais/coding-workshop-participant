@@ -65,7 +65,7 @@ function EmployeesPage() {
     <main className="page">
       <div className="page-header">
         <h1>Employees</h1>
-        <button type="button" className="primary" onClick={() => setForm({})} disabled={!data}>Add person</button>
+        <button type="button" className="primary" onClick={() => setForm({})} disabled={!data}>Create new user</button>
       </div>
 
       <div className="filters">
@@ -82,16 +82,16 @@ function EmployeesPage() {
         </label>
         <label className="checkbox">
           <input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />
-          Show archived people
+          Show archived users
         </label>
       </div>
 
       <ErrorMessage error={error} onRetry={reload} />
       <ErrorMessage error={actionError} />
       {notice && <p className="success" role="status">{notice}</p>}
-      {loading && !data && <p className="muted" role="status">Loading people…</p>}
+      {loading && !data && <p className="muted" role="status">Loading users…</p>}
 
-      {data && (rows.length === 0 ? <p className="muted">Nobody matches these filters.</p> : (
+      {data && (rows.length === 0 ? <p className="muted">No users match these filters.</p> : (
         <div className="table-wrap">
           <table>
             <thead>

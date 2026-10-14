@@ -22,6 +22,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -60,14 +61,15 @@ class PostgresRepositoriesTest {
 
                 Milestone design = new Milestone("m1", "Design", "Wireframes and visual design",
                         LocalDate.of(2026, 1, 1), LocalDate.of(2026, 2, 1), 4.5, List.of("bob", "carol"),
-                        CompletionStatus.IN_PROGRESS, null, null);
+                        CompletionStatus.IN_PROGRESS, null, null, 40.0, null);
                 Milestone build = new Milestone("a0", "Build", null, LocalDate.of(2026, 2, 2),
-                        LocalDate.of(2026, 3, 1), 0, List.of(), CompletionStatus.TODO, null, List.of("m1"));
+                        LocalDate.of(2026, 3, 1), 0, List.of(), CompletionStatus.TODO, null, List.of("m1"), null, null);
                 Project project = new Project("p1", "Apollo", "Crewed lunar landing", LocalDate.of(2026, 1, 1),
                         LocalDate.of(2026, 12, 31), 12.5, "alice", new BigDecimal("50000.75"), CompletionStatus.TODO,
-                        List.of(design, build), null, null);
+                        List.of(design, build), null, null, 160.0, null);
                 Project earlier = new Project("p2", "Mercury", null, LocalDate.of(2025, 6, 1), LocalDate.of(2025, 9, 1),
-                        0, "dave", BigDecimal.ZERO, CompletionStatus.COMPLETE, List.of(), null, List.of("p1"));
+                        0, "dave", BigDecimal.ZERO, CompletionStatus.COMPLETE, List.of(), null, List.of("p1"), null,
+                        null);
 
                 projects.insert(project);
                 projects.insert(earlier);
@@ -76,18 +78,19 @@ class PostgresRepositoriesTest {
                 assertEquals(List.of(earlier, project), projects.findAll(false));
 
                 Project updated = new Project("p1", "Gemini", null, project.startDate(), project.endDate(), 20, "erin",
-                        new BigDecimal("1.00"), CompletionStatus.COMPLETE, List.of(build), null, null);
+                        new BigDecimal("1.00"), CompletionStatus.COMPLETE, List.of(build), null, null, null, null);
                 assertTrue(projects.replace(updated));
                 assertEquals(updated, projects.findById("p1").orElseThrow());
                 assertFalse(projects.replace(new Project("missing", "n", null, project.startDate(),
-                        project.endDate(), 0, "m", BigDecimal.ONE, null, null, null, null)));
+                        project.endDate(), 0, "m", BigDecimal.ONE, null, null, null, null, null, null)));
 
                 // The milestone left out of the update is archived, not deleted, and its id cannot be reused.
                 assertEquals(1, count(admin, schema, "milestones WHERE id = 'm1' AND archived_at IS NOT NULL"));
                 assertEquals(List.of("m1"), projects.findArchivedMilestones("p1").stream().map(Milestone::id)
                         .toList());
                 Project reusingId = new Project("p1", "Gemini", null, project.startDate(), project.endDate(), 20,
-                        "erin", new BigDecimal("1.00"), CompletionStatus.COMPLETE, List.of(build, design), null, null);
+                        "erin", new BigDecimal("1.00"), CompletionStatus.COMPLETE, List.of(build, design), null, null,
+                        null, null);
                 assertThrows(ConflictException.class, () -> projects.replace(reusingId));
                 assertEquals(updated, projects.findById("p1").orElseThrow());
 
@@ -205,6 +208,10 @@ class PostgresRepositoriesTest {
                 SettingsRepository settings = new PostgresSettingsRepository(database);
                 assertEquals("first", settings.getOrCreate("secret", () -> "first"));
                 assertEquals("first", settings.getOrCreate("secret", () -> "second"));
+                assertEquals(Optional.empty(), settings.get("thresholds"));
+                settings.put("thresholds", "a");
+                settings.put("thresholds", "b");
+                assertEquals(Optional.of("b"), settings.get("thresholds"));
 
                 assertEquals(3, count(admin, schema, "users"));
                 assertEquals(2, count(admin, schema, "refresh_tokens"));
@@ -230,9 +237,10 @@ class PostgresRepositoriesTest {
                         new User("e1", "e1@example.com", "E1", Role.EMPLOYEE, null, null, null, false, false), "hash");
                 ProjectRepository projects = new PostgresProjectRepository(database);
                 Milestone milestone = new Milestone("m1", "Design", null, LocalDate.of(2026, 1, 1),
-                        LocalDate.of(2026, 2, 1), 1.0, List.of("e1"), CompletionStatus.IN_PROGRESS, null, null);
+                        LocalDate.of(2026, 2, 1), 1.0, List.of("e1"), CompletionStatus.IN_PROGRESS, null, null, null,
+                        null);
                 projects.insert(new Project("p1", "Apollo", null, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
-                        0, "m", BigDecimal.TEN, null, List.of(milestone), null, null));
+                        0, "m", BigDecimal.TEN, null, List.of(milestone), null, null, null, null));
                 TimeEntryRepository entries = new PostgresTimeEntryRepository(database);
                 Instant start = Instant.parse("2026-10-14T09:00:00Z");
 
@@ -271,16 +279,30 @@ class PostgresRepositoriesTest {
                 assertEquals(3.0, projects.findById("p1").orElseThrow().milestones().get(0).progressTime());
                 assertEquals(0, new BigDecimal("100.00").compareTo(entries.totalCostByProject().get("p1")));
 
+                // Assignee changes touch only the assignees, and apply to every milestone or to none.
+                assertTrue(projects.setAssignees("p1", Map.of("m1", List.of("e1", "e2"))));
+                assertEquals(List.of("e1", "e2"), projects.findById("p1").orElseThrow().milestones().get(0)
+                        .assignedEmployees());
+                assertEquals(3.0, projects.findById("p1").orElseThrow().milestones().get(0).progressTime());
+                // m1 is changed first, then the missing milestone makes the whole change roll back.
+                Map<String, List<String>> partlyMissing = new java.util.LinkedHashMap<>();
+                partlyMissing.put("m1", List.of());
+                partlyMissing.put("missing", List.of("e1"));
+                assertFalse(projects.setAssignees("p1", partlyMissing));
+                assertEquals(List.of("e1", "e2"), projects.findById("p1").orElseThrow().milestones().get(0)
+                        .assignedEmployees());
+
                 // Changing the status leaves the logged progress alone, and stores the completion time.
-                assertTrue(projects.setMilestoneStatus("p1", "m1", CompletionStatus.AWAITING_REVIEW, null));
+                assertTrue(projects.setMilestoneStatus("p1", "m1", CompletionStatus.AWAITING_REVIEW, null, fixedAt));
                 Milestone reviewed = projects.findById("p1").orElseThrow().milestones().get(0);
                 assertEquals(CompletionStatus.AWAITING_REVIEW, reviewed.status());
                 assertEquals(3.0, reviewed.progressTime());
-                assertTrue(projects.setMilestoneStatus("p1", "m1", CompletionStatus.COMPLETE, fixedAt));
+                assertTrue(projects.setMilestoneStatus("p1", "m1", CompletionStatus.COMPLETE, fixedAt, fixedAt));
                 assertEquals(fixedAt, projects.findById("p1").orElseThrow().milestones().get(0).completedAt());
-                assertFalse(projects.setMilestoneStatus("p1", "missing", CompletionStatus.COMPLETE, fixedAt));
+                assertEquals(fixedAt, projects.findById("p1").orElseThrow().milestones().get(0).statusChangedAt());
+                assertFalse(projects.setMilestoneStatus("p1", "missing", CompletionStatus.COMPLETE, fixedAt, fixedAt));
                 assertTrue(projects.archive("p1"));
-                assertFalse(projects.setMilestoneStatus("p1", "m1", CompletionStatus.COMPLETE, fixedAt));
+                assertFalse(projects.setMilestoneStatus("p1", "m1", CompletionStatus.COMPLETE, fixedAt, fixedAt));
             } finally {
                 statement.execute("DROP SCHEMA " + schema + " CASCADE");
             }

@@ -6,6 +6,7 @@ import com.acme.models.Project;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -32,11 +33,20 @@ public interface ProjectRepository {
     boolean replace(Project project);
 
     /**
-     * Sets one active milestone's status and completion time without touching its other fields, so it cannot
+     * Sets one active milestone's status, completion time and status-change time without touching its other fields,
+     * so it cannot
      * overwrite progress logged at the same moment. Returns false when there is no such active milestone on an
      * active project.
      */
-    boolean setMilestoneStatus(String projectId, String milestoneId, CompletionStatus status, Instant completedAt);
+    boolean setMilestoneStatus(String projectId, String milestoneId, CompletionStatus status, Instant completedAt,
+                               Instant statusChangedAt);
+
+    /**
+     * Sets who is assigned to one or more active milestones of an active project, without touching their other
+     * fields, in one transaction: either every milestone changes or none does. Returns false, changing nothing,
+     * when the project or any of the milestones is missing or archived.
+     */
+    boolean setAssignees(String projectId, Map<String, List<String>> assigneesByMilestone);
 
     /** The archived milestones of a project, whether the project itself is archived or not, in their last order. */
     List<Milestone> findArchivedMilestones(String projectId);

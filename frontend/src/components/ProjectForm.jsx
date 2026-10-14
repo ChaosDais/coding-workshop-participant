@@ -8,7 +8,8 @@ import {
 } from '../utils/validation.js';
 
 const EMPTY = {
-  name: '', description: '', startDate: '', endDate: '', manager: '', budget: '', status: 'TODO', dependsOn: [],
+  name: '', description: '', startDate: '', endDate: '', manager: '', budget: '', expectedHours: '', status: 'TODO',
+  dependsOn: [],
 };
 
 /**
@@ -25,7 +26,12 @@ function ProjectForm({
   project, managers, projects, onSubmit, onCancel,
 }) {
   const [values, setValues] = useState(() => (project ? {
-    ...EMPTY, ...project, description: project.description ?? '', budget: String(project.budget),
+    ...EMPTY,
+    ...project,
+    description: project.description ?? '',
+    budget: String(project.budget),
+    expectedHours: project.expectedHours === undefined || project.expectedHours === null ? ''
+      : String(project.expectedHours),
   } : EMPTY));
   const [errors, setErrors] = useState({});
   const [submitError, setSubmitError] = useState();
@@ -44,6 +50,7 @@ function ProjectForm({
       name: required(values.name, 'Name'),
       manager: required(values.manager, 'Manager'),
       budget: nonNegativeNumber(values.budget, 'Budget'),
+      expectedHours: nonNegativeNumber(values.expectedHours, 'Expected hours', { optional: true }),
       ...dateRange(values.startDate, values.endDate),
     });
     setErrors(found);
@@ -60,6 +67,7 @@ function ProjectForm({
         endDate: values.endDate,
         manager: values.manager,
         budget: Number(values.budget),
+        expectedHours: values.expectedHours === '' ? undefined : Number(values.expectedHours),
         status: values.status,
         dependsOn: values.dependsOn,
       });
@@ -99,6 +107,9 @@ function ProjectForm({
           </Field>
           <Field id="project-budget" label="Budget (USD)" required error={errors.budget}>
             {(props) => <input id={props.id} type="number" min="0" step="0.01" value={values.budget} onChange={set('budget')} aria-invalid={props.invalid} aria-describedby={props.describedBy} />}
+          </Field>
+          <Field id="project-expected" label="Expected hours" error={errors.expectedHours}>
+            {(props) => <input id={props.id} type="number" min="0" step="0.5" value={values.expectedHours} onChange={set('expectedHours')} aria-invalid={props.invalid} aria-describedby={props.describedBy} />}
           </Field>
           <Field id="project-status" label="Status">
             {(props) => (

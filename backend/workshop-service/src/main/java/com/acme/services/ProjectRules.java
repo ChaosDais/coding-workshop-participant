@@ -18,7 +18,8 @@ import java.util.Optional;
  * changed between {@code before} (null for a new project) and {@code after}, so data saved before a rule existed
  * stays readable and editable as long as the edit does not touch what the rule is about.
  * <ul>
- *   <li>Completion times: set when something becomes COMPLETE, kept while it stays complete, cleared on reopening.</li>
+ *   <li>Completion times: set when something becomes COMPLETE, kept while it stays complete, cleared on reopening.
+ *       Status-change times: set on creation and on every status change, kept otherwise.</li>
  *   <li>Frozen dates: while a project stays complete, its dates and its milestones' dates cannot change, and
  *       neither can the dates of a milestone that stays complete. A change that reopens it may also move them.</li>
  *   <li>Milestone dates fall within the project's dates.</li>
@@ -44,12 +45,27 @@ final class ProjectRules {
     private static Project stampCompletion(Project before, Project after, Instant now) {
         List<Milestone> milestones = after.milestones().stream().map(milestone -> {
             Optional<Milestone> previous = find(before, milestone.id());
-            return milestone.withStatus(milestone.status(), completedAt(milestone.status(),
-                    previous.map(Milestone::status).orElse(null), previous.map(Milestone::completedAt).orElse(null),
-                    now));
+            CompletionStatus previousStatus = previous.map(Milestone::status).orElse(null);
+            return milestone.withStatus(milestone.status(), completedAt(milestone.status(), previousStatus,
+                            previous.map(Milestone::completedAt).orElse(null), now))
+                    .withStatusChangedAt(statusChangedAt(previous.isEmpty(), milestone.status(), previousStatus,
+                            previous.map(Milestone::statusChangedAt).orElse(null), now));
         }).toList();
-        return after.withMilestones(milestones).withCompletedAt(completedAt(after.status(),
-                before == null ? null : before.status(), before == null ? null : before.completedAt(), now));
+        return after.withMilestones(milestones)
+                .withCompletedAt(completedAt(after.status(), before == null ? null : before.status(),
+                        before == null ? null : before.completedAt(), now))
+                .withStatusChangedAt(statusChangedAt(before == null, after.status(),
+                        before == null ? null : before.status(), before == null ? null : before.statusChangedAt(),
+                        now));
+    }
+
+    /**
+     * Now for something new or whose status just changed; otherwise the earlier time, which is unknown (null) for
+     * records saved before status changes were tracked.
+     */
+    static Instant statusChangedAt(boolean created, CompletionStatus status, CompletionStatus previous,
+                                   Instant previousAt, Instant now) {
+        return created || status != previous ? now : previousAt;
     }
 
     /** Now when something just became COMPLETE; the earlier time while it stays complete; none otherwise. */

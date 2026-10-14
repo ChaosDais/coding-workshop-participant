@@ -11,6 +11,7 @@ import com.acme.services.AuditService;
 import com.acme.services.AuthService;
 import com.acme.services.PasswordHasher;
 import com.acme.services.ProjectService;
+import com.acme.services.SettingsService;
 import com.acme.services.TimeService;
 import com.acme.services.TokenAuthenticator;
 import com.acme.services.TokenService;
@@ -52,14 +53,16 @@ class TestApp {
         InMemoryTimeEntryRepository timeEntries = new InMemoryTimeEntryRepository(projects);
         // The lowest BCrypt cost keeps the tests fast; production uses 10.
         PasswordHasher passwords = new PasswordHasher(4);
-        TokenService tokens = new TokenService(new InMemorySettingsRepository(), refreshTokens, clock);
+        InMemorySettingsRepository settings = new InMemorySettingsRepository();
+        TokenService tokens = new TokenService(settings, refreshTokens, clock);
         AppConfig config = new AppConfig();
         handler = new Handler(config.router(new TokenAuthenticator(tokens, users),
                 new AuthService(users, passwords, tokens, audit,
                         new AuthService.DefaultAdmin(ADMIN_EMAIL, INITIAL_ADMIN_PASSWORD)),
                 new UserService(users, projects, passwords, tokens, audit),
                 new ProjectService(projects, users, timeEntries, audit, clock),
-                new TimeService(timeEntries, projects, users, audit, clock), audit));
+                new TimeService(timeEntries, projects, users, audit, clock), audit,
+                new SettingsService(settings, audit)));
     }
 
     /** Sends a request; a path may carry a query string, and a null token sends no Authorization header. */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  availability, blockingMilestones, projectRows, sortProjects,
+  availability, blockingMilestones, openMilestoneByEmployee, projectRows, sortProjects,
 } from './projects.js';
 
 const projects = new Map([
@@ -85,5 +85,19 @@ describe('sortProjects', () => {
     ];
     expect(sortProjects(input).map((project) => project.name)).toEqual(['C', 'A', 'B']);
     expect(input[0].name).toBe('B');
+  });
+});
+
+describe('openMilestoneByEmployee', () => {
+  it('maps each employee to the unfinished milestone they work on, leaving one milestone out', () => {
+    const project = {
+      milestones: [
+        { id: 'a', name: 'Design', status: 'IN_PROGRESS', assignedEmployees: ['e1'] },
+        { id: 'b', name: 'Build', status: 'TODO', assignedEmployees: ['e2'] },
+        { id: 'c', name: 'Pilot', status: 'COMPLETE', assignedEmployees: ['e3'] },
+      ],
+    };
+    expect([...openMilestoneByEmployee(project)]).toEqual([['e1', 'Design'], ['e2', 'Build']]);
+    expect([...openMilestoneByEmployee(project, 'a')]).toEqual([['e2', 'Build']]);
   });
 });

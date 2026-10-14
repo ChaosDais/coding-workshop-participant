@@ -68,14 +68,30 @@ public class InMemoryProjectRepository implements ProjectRepository {
     }
 
     @Override
+    public synchronized boolean setAssignees(String projectId, Map<String, List<String>> assigneesByMilestone) {
+        Project project = projects.get(projectId);
+        if (project == null || archived.contains(projectId) || !assigneesByMilestone.keySet().stream()
+                .allMatch(id -> project.milestones().stream().anyMatch(milestone -> milestone.id().equals(id)))) {
+            return false;
+        }
+        assigneesByMilestone.forEach((milestoneId, assignees) -> updateMilestone(projectId, milestoneId,
+                milestone -> new Milestone(milestone.id(), milestone.name(), milestone.description(),
+                        milestone.startDate(), milestone.endDate(), milestone.progressTime(), assignees,
+                        milestone.status(), milestone.completedAt(), milestone.dependsOn(),
+                        milestone.expectedHours(), milestone.statusChangedAt())));
+        return true;
+    }
+
+    @Override
     public List<Milestone> findArchivedMilestones(String projectId) {
         return List.copyOf(archivedMilestones.getOrDefault(projectId, List.of()));
     }
 
     @Override
     public synchronized boolean setMilestoneStatus(String projectId, String milestoneId, CompletionStatus status,
-                                                   Instant completedAt) {
-        return updateMilestone(projectId, milestoneId, milestone -> milestone.withStatus(status, completedAt));
+                                                   Instant completedAt, Instant statusChangedAt) {
+        return updateMilestone(projectId, milestoneId,
+                milestone -> milestone.withStatus(status, completedAt).withStatusChangedAt(statusChangedAt));
     }
 
     /** Used by the in-memory time entry repository, which adds logged hours to a milestone's progress. */

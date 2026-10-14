@@ -4,6 +4,7 @@ import com.acme.controllers.AuditController;
 import com.acme.controllers.AuthController;
 import com.acme.controllers.MilestoneController;
 import com.acme.controllers.ProjectController;
+import com.acme.controllers.SettingsController;
 import com.acme.controllers.StatusController;
 import com.acme.controllers.TimeController;
 import com.acme.controllers.UserController;
@@ -27,6 +28,7 @@ import com.acme.services.AuditService;
 import com.acme.services.AuthService;
 import com.acme.services.PasswordHasher;
 import com.acme.services.ProjectService;
+import com.acme.services.SettingsService;
 import com.acme.services.TimeService;
 import com.acme.services.TokenAuthenticator;
 import com.acme.services.TokenService;
@@ -130,13 +132,19 @@ public class AppConfig {
         return new TimeService(timeEntryRepository, projectRepository, userRepository, auditService, clock);
     }
 
+    @Bean
+    public SettingsService settingsService(SettingsRepository settingsRepository, AuditService auditService) {
+        return new SettingsService(settingsRepository, auditService);
+    }
+
     /**
      * Every endpoint the service exposes; a new feature adds its controller here. Each route declares its own
      * access rule when it registers, and the router checks it before the route runs.
      */
     @Bean
     public Router router(Authenticator authenticator, AuthService authService, UserService userService,
-                         ProjectService projectService, TimeService timeService, AuditService auditService) {
+                         ProjectService projectService, TimeService timeService, AuditService auditService,
+                         SettingsService settingsService) {
         Router router = new Router(authenticator);
         List<Controller> controllers = List.of(
                 new StatusController(),
@@ -145,7 +153,8 @@ public class AppConfig {
                 new ProjectController(projectService),
                 new MilestoneController(projectService),
                 new TimeController(timeService),
-                new AuditController(auditService));
+                new AuditController(auditService),
+                new SettingsController(settingsService));
         controllers.forEach(controller -> controller.register(router));
         return router;
     }

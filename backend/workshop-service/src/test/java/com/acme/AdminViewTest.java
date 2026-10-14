@@ -1,6 +1,7 @@
 package com.acme;
 
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -111,6 +112,28 @@ class AdminViewTest {
         assertEquals("eli@example.com", created.get("name"));
         assertEquals("eli@example.com", created.get("email"));
         assertEquals("eli@example.com", details("?action=user_archived").get("name"));
+    }
+
+    @Test
+    void adminsAdjustTheBottleneckThresholdsEveryoneReads() {
+        JsonObject defaults = body(send("GET", "/settings/bottlenecks", null)).getAsJsonObject();
+        assertEquals(3, defaults.get("awaitingReviewDays").getAsInt());
+        assertEquals(30, defaults.get("anyStatusDays").getAsInt());
+
+        assertEquals(200, status(send("PUT", "/settings/bottlenecks",
+                "{\"awaitingReviewDays\": 5, \"anyStatusDays\": 21}")));
+        String managerToken = app.signIn("manager@example.com", PASSWORD).get("accessToken").getAsString();
+        JsonObject read = body(app.send("GET", "/settings/bottlenecks", null, managerToken)).getAsJsonObject();
+        assertEquals(5, read.get("awaitingReviewDays").getAsInt());
+        assertEquals(21, read.get("anyStatusDays").getAsInt());
+
+        assertEquals(403, status(app.send("PUT", "/settings/bottlenecks",
+                "{\"awaitingReviewDays\": 1, \"anyStatusDays\": 1}", managerToken)));
+        assertEquals("anyStatusDays must be a whole number of days from 1 to 365", error(send("PUT",
+                "/settings/bottlenecks", "{\"awaitingReviewDays\": 5, \"anyStatusDays\": 0}")));
+        assertEquals(400, status(send("PUT", "/settings/bottlenecks", "{\"awaitingReviewDays\": 5}")));
+        assertEquals("{\"awaitingReviewDays\":3,\"anyStatusDays\":30}",
+                details("?action=settings_updated").get("previous"));
     }
 
     /** The details of the newest audit entry matching the query. */

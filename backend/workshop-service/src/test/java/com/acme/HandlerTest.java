@@ -157,6 +157,24 @@ class HandlerTest {
     }
 
     @Test
+    void projectsAndMilestonesHaveOptionalExpectedHours() {
+        Map<String, Object> created = send("POST", "/projects",
+                projectJson.replaceFirst("\\{", "{\"expectedHours\": 120, "));
+        assertEquals(201, status(created));
+        String id = body(created).getAsJsonObject().get("id").getAsString();
+        assertEquals(120, body(created).getAsJsonObject().get("expectedHours").getAsInt());
+
+        Map<String, Object> milestone = send("POST", "/projects/" + id + "/milestones",
+                milestoneJson.replaceFirst("\\{", "{\"expectedHours\": 12.5, "));
+        assertEquals(12.5, body(milestone).getAsJsonObject().get("expectedHours").getAsDouble());
+
+        assertEquals("expectedHours must be a non-negative number", error(send("POST", "/projects",
+                projectJson.replaceFirst("\\{", "{\"expectedHours\": -1, "))));
+        // Optional: a project without one simply has none.
+        assertTrue(!body(send("POST", "/projects", projectJson)).getAsJsonObject().has("expectedHours"));
+    }
+
+    @Test
     void requestsThroughCloudFrontKeepTheirApiPrefix() {
         assertEquals(201, status(send("POST", "/api/workshop-service/projects", projectJson)));
         assertEquals(1, body(send("GET", "/api/workshop-service/projects/", null)).getAsJsonArray().size());

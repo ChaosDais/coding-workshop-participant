@@ -28,6 +28,8 @@ class IntegrityTest {
     private String token;
     private String managerId;
     private String employeeId;
+    /** Who milestones created by the helpers are assigned to; nobody unless a test sets it. */
+    private String assignee;
     private String projectId;
 
     @BeforeEach
@@ -52,8 +54,9 @@ class IntegrityTest {
     private String milestone(String name, String start, String end, String status, String... dependsOn) {
         String dependencies = dependsOn.length == 0 ? "" : "\"" + String.join("\", \"", dependsOn) + "\"";
         return """
-                {"name": "%s", "startDate": "%s", "endDate": "%s", "status": "%s", "assignedEmployees": ["%s"],
-                 "dependsOn": [%s]}""".formatted(name, start, end, status, employeeId, dependencies);
+                {"name": "%s", "startDate": "%s", "endDate": "%s", "status": "%s", "assignedEmployees": [%s],
+                 "dependsOn": [%s]}""".formatted(name, start, end, status,
+                assignee == null ? "" : "\"" + assignee + "\"", dependencies);
     }
 
     private String add(String name, String status, String... dependsOn) {
@@ -103,6 +106,33 @@ class IntegrityTest {
     }
 
     @Test
+    void statusChangeTimesAreRecordedOnCreationAndEachStatusChange() {
+        JsonObject created = body(send("GET", "/projects/" + projectId, null)).getAsJsonObject();
+        assertEquals("2026-10-14T12:00:00Z", created.get("statusChangedAt").getAsString());
+        String design = add("Design", "TODO");
+        assertEquals("2026-10-14T12:00:00Z", milestoneById(design).get("statusChangedAt").getAsString());
+
+        app.clock.advance(Duration.ofDays(3));
+        token = app.signIn(TestApp.ADMIN_EMAIL, PASSWORD).get("accessToken").getAsString();
+        // Edits that keep the status keep the time.
+        assertEquals(200, status(send("PUT", milestones() + "/" + design, milestone("Design (renamed)", "2026-02-01",
+                "2026-03-01", "TODO"))));
+        assertEquals("2026-10-14T12:00:00Z", milestoneById(design).get("statusChangedAt").getAsString());
+        assertEquals(200, status(send("PUT", "/projects/" + projectId,
+                project("2026-01-01", "2026-12-31", "IN_PROGRESS").replace("Apollo", "Apollo II"))));
+        assertEquals("2026-10-14T12:00:00Z", body(send("GET", "/projects/" + projectId, null)).getAsJsonObject()
+                .get("statusChangedAt").getAsString());
+
+        // A status change restarts the clock.
+        assertEquals(200, status(setStatus(design, "IN_PROGRESS")));
+        assertEquals("2026-10-17T12:00:00Z", milestoneById(design).get("statusChangedAt").getAsString());
+        assertEquals(200, status(send("PUT", "/projects/" + projectId, project("2026-01-01", "2026-12-31",
+                "AWAITING_REVIEW"))));
+        assertEquals("2026-10-17T12:00:00Z", body(send("GET", "/projects/" + projectId, null)).getAsJsonObject()
+                .get("statusChangedAt").getAsString());
+    }
+
+    @Test
     void completedWorkHasFrozenDates() {
         String design = add("Design", "IN_PROGRESS");
         assertEquals(200, status(setStatus(design, "COMPLETE")));
@@ -148,7 +178,7 @@ class IntegrityTest {
     void ruleViolationsSavedBeforeTheRulesStayEditable() {
         Project stored = repository.findById(projectId).orElseThrow();
         Milestone outside = new Milestone("legacy", "Legacy", null, LocalDate.of(2025, 1, 1),
-                LocalDate.of(2025, 2, 1), 0, List.of(), null, null, null);
+                LocalDate.of(2025, 2, 1), 0, List.of(), null, null, null, null, null);
         assertTrue(repository.replace(stored.withMilestones(List.of(outside))));
 
         // Renaming the project does not touch the milestone's dates, so the old milestone is not re-checked.
@@ -161,6 +191,7 @@ class IntegrityTest {
     @Test
     void aMilestoneCannotStartOrCompleteBeforeItsDependencies() {
         String design = add("Design", "IN_PROGRESS");
+        assignee = employeeId;
         String build = add("Build", "TODO", design);
 
         assertEquals("Milestone 'Build' cannot start or complete until the milestones it depends on are complete:"

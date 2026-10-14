@@ -1,15 +1,18 @@
 import { useCallback, useMemo, useState } from 'react';
+import ErrorMessage from '../components/ErrorMessage.jsx';
+import HoursProgress from '../components/HoursProgress.jsx';
 import Modal from '../components/Modal.jsx';
 import ProjectForm from '../components/ProjectForm.jsx';
+import StatusAge from '../components/StatusAge.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
-import ErrorMessage from '../components/ErrorMessage.jsx';
+import { useAuth } from '../auth/AuthContext.jsx';
 import { useLoader } from '../hooks/useLoader.js';
 import { navigate } from '../hooks/useHashRoute.js';
 import { projectsApi } from '../services/api.js';
-import { loadProjectsAndPeople } from '../services/adminData.js';
+import { loadProjectsAndPeople } from '../services/projectData.js';
 import { availability, projectRows } from '../utils/projects.js';
 import {
-  STATUSES, formatDate, formatHours, statusLabel,
+  STATUSES, formatDate, formatTimestamp, statusLabel,
 } from '../utils/format.js';
 import { byId } from '../utils/users.js';
 
@@ -18,13 +21,16 @@ const NO_FILTERS = {
 };
 
 /**
- * The admin's home: projects with their dates, status, manager, progress and whether they can be worked on.
- * Open projects come first; completed ones are hidden unless asked for, and then shown greyed out at the bottom.
- * Rows open the project view.
+ * The home page: projects with their dates, status and how long they have been in it (flagging possible
+ * bottlenecks), progress against expected hours and whether they can be worked on. Admins see every project and can create them; managers see the projects they manage.
+ * Open projects come first; completed ones are hidden unless asked for, and then shown greyed out at the bottom
+ * with their completion dates. Rows open the project view.
  * @returns {JSX.Element} The projects page.
  */
 function ProjectsPage() {
-  const load = useCallback(loadProjectsAndPeople, []);
+  const { user } = useAuth();
+  const isAdmin = user.role === 'ADMIN';
+  const load = useCallback(() => loadProjectsAndPeople(user), [user]);
   const { data, error, loading, reload } = useLoader(load);
   const [filters, setFilters] = useState(NO_FILTERS);
   const [creating, setCreating] = useState(false);
@@ -36,16 +42,17 @@ function ProjectsPage() {
     return {
       users: byId(data.users),
       projects: new Map([...data.active, ...data.archived].map((project) => [project.id, project])),
-      managers: data.users.filter((user) => user.role === 'MANAGER' && !user.archived),
+      managers: data.users.filter((person) => person.role === 'MANAGER' && !person.archived),
       // Managers of any loaded project, archived or not, so filtering by an archived manager still works.
       projectManagers: [...new Set([...data.active, ...data.archived].map((project) => project.manager))]
-        .map((id) => data.users.find((user) => user.id === id) ?? { id, name: `Unknown (${id.slice(0, 8)})` })
+        .map((id) => data.users.find((person) => person.id === id) ?? { id, name: `Unknown (${id.slice(0, 8)})` })
         .sort((a, b) => a.name.localeCompare(b.name)),
     };
   }, [data]);
 
   const rows = data ? projectRows(data.active, data.archived, filters, lookups.users) : [];
   const filtered = Boolean(filters.search || filters.status || filters.managerId);
+  const showingCompleted = filters.showCompleted || filters.status === 'COMPLETE';
 
   const set = (field) => (event) => {
     const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
@@ -61,14 +68,14 @@ function ProjectsPage() {
   return (
     <main className="page">
       <div className="page-header">
-        <h1>Projects</h1>
-        <button type="button" className="primary" onClick={() => setCreating(true)} disabled={!data}>New project</button>
+        <h1>{isAdmin ? 'Projects' : 'My Projects'}</h1>
+        {isAdmin && <button type="button" className="primary" onClick={() => setCreating(true)} disabled={!data}>New Project</button>}
       </div>
 
       <div className="filters">
         <label htmlFor="projects-search">
           Search
-          <input id="projects-search" type="search" placeholder="Project, description or manager" value={filters.search} onChange={set('search')} />
+          <input id="projects-search" type="search" placeholder={isAdmin ? 'Project, description or manager' : 'Project or description'} value={filters.search} onChange={set('search')} />
         </label>
         <label htmlFor="projects-status">
           Status
@@ -77,21 +84,25 @@ function ProjectsPage() {
             {STATUSES.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
           </select>
         </label>
-        <label htmlFor="projects-manager">
-          Manager
-          <select id="projects-manager" value={filters.managerId} onChange={set('managerId')} disabled={!data}>
-            <option value="">All managers</option>
-            {lookups?.projectManagers.map((manager) => <option key={manager.id} value={manager.id}>{manager.name}</option>)}
-          </select>
-        </label>
+        {isAdmin && (
+          <label htmlFor="projects-manager">
+            Manager
+            <select id="projects-manager" value={filters.managerId} onChange={set('managerId')} disabled={!data}>
+              <option value="">All managers</option>
+              {lookups?.projectManagers.map((manager) => <option key={manager.id} value={manager.id}>{manager.name}</option>)}
+            </select>
+          </label>
+        )}
         <label className="checkbox">
           <input type="checkbox" checked={filters.showCompleted} onChange={set('showCompleted')} />
           Show completed projects
         </label>
-        <label className="checkbox">
-          <input type="checkbox" checked={filters.showArchived} onChange={set('showArchived')} />
-          Show archived projects
-        </label>
+        {isAdmin && (
+          <label className="checkbox">
+            <input type="checkbox" checked={filters.showArchived} onChange={set('showArchived')} />
+            Show archived projects
+          </label>
+        )}
         {filtered && <button type="button" onClick={() => setFilters((current) => ({ ...current, search: '', status: '', managerId: '' }))}>Clear filters</button>}
       </div>
 
@@ -99,7 +110,7 @@ function ProjectsPage() {
       {loading && !data && <p className="muted" role="status">Loading projects…</p>}
 
       {data && data.active.length === 0 && data.archived.length === 0 && (
-        <p className="muted">No projects yet. Create the first one with New project.</p>
+        <p className="muted">{isAdmin ? 'No projects yet. Create the first one with New Project.' : 'You are not managing any projects yet.'}</p>
       )}
       {data && (data.active.length > 0 || data.archived.length > 0) && (
         rows.length === 0 ? (
@@ -113,9 +124,10 @@ function ProjectsPage() {
                 <tr>
                   <th scope="col">Project</th>
                   <th scope="col">Status</th>
-                  <th scope="col">Manager</th>
+                  {isAdmin && <th scope="col">Manager</th>}
                   <th scope="col">Start</th>
                   <th scope="col">Expected end</th>
+                  {showingCompleted && <th scope="col">Completed</th>}
                   <th scope="col" className="numeric">Progress</th>
                   <th scope="col">Availability</th>
                 </tr>
@@ -130,11 +142,17 @@ function ProjectsPage() {
                         <a href={`#/projects/${project.id}`} onClick={(event) => event.stopPropagation()}>{project.name}</a>
                         {archived && <span className="badge archived-badge">Archived</span>}
                       </td>
-                      <td><StatusBadge status={project.status} /></td>
-                      <td>{lookups.users.get(project.manager)?.name ?? project.manager}</td>
+                      <td>
+                        <StatusBadge status={project.status} />
+                        <StatusAge item={project} />
+                      </td>
+                      {isAdmin && <td>{lookups.users.get(project.manager)?.name ?? project.manager}</td>}
                       <td className="nowrap">{formatDate(project.startDate)}</td>
                       <td className="nowrap">{formatDate(project.endDate)}</td>
-                      <td className="numeric">{formatHours(project.progressTime)}</td>
+                      {showingCompleted && <td className="nowrap">{project.completedAt ? formatTimestamp(project.completedAt) : '—'}</td>}
+                      <td className="numeric">
+                        <HoursProgress progress={project.progressTime} expected={project.expectedHours} showOverrun label={project.name} />
+                      </td>
                       <td><span className={`availability ${state}`}>{label}</span></td>
                     </tr>
                   );
@@ -146,7 +164,7 @@ function ProjectsPage() {
       )}
 
       {creating && (
-        <Modal title="New project" onClose={() => setCreating(false)}>
+        <Modal title="New Project" onClose={() => setCreating(false)}>
           <ProjectForm managers={lookups.managers} projects={data.active} onSubmit={create} onCancel={() => setCreating(false)} />
         </Modal>
       )}

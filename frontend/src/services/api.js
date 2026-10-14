@@ -154,6 +154,19 @@ export const auth = {
     return email ? auth.signIn(email, newPassword) : undefined;
   },
   me: () => request('GET', '/auth/me'),
+  /** Changes the signed-in user's own name and email, and keeps the session's copy in step. */
+  async updateProfile(name, email) {
+    const updated = await request('PUT', '/auth/me', { name, email });
+    if (session) {
+      setSession({ ...session, user: updated });
+    }
+    return updated;
+  },
+};
+
+export const settingsApi = {
+  bottlenecks: () => request('GET', '/settings/bottlenecks'),
+  updateBottlenecks: (thresholds) => request('PUT', '/settings/bottlenecks', thresholds),
 };
 
 export const projectsApi = {
@@ -170,6 +183,13 @@ export const projectsApi = {
   setMilestoneStatus: (id, milestoneId, status) => request('PUT',
     `/projects/${id}/milestones/${milestoneId}/status`, { status }),
   archiveMilestone: (id, milestoneId) => request('DELETE', `/projects/${id}/milestones/${milestoneId}`),
+  /** These change only who is assigned, so they never overwrite progress logged at the same time. */
+  assign: (id, milestoneId, employeeId) => request('POST', `/projects/${id}/milestones/${milestoneId}/assignees`,
+    { employeeId }),
+  unassign: (id, milestoneId, employeeId) => request('DELETE',
+    `/projects/${id}/milestones/${milestoneId}/assignees/${employeeId}`),
+  move: (id, milestoneId, employeeId, toMilestoneId) => request('POST',
+    `/projects/${id}/milestones/${milestoneId}/assignees/${employeeId}/move`, { toMilestoneId }),
 };
 
 export const usersApi = {
@@ -178,6 +198,7 @@ export const usersApi = {
   update: (id, user) => request('PUT', `/users/${id}`, user),
   archive: (id) => request('DELETE', `/users/${id}`),
   restore: (id) => request('POST', `/users/${id}/restore`),
+  get: (id) => request('GET', `/users/${id}`),
   /** Sets someone else's password; they are signed out of every session. */
   resetPassword: (id, password) => request('PUT', `/users/${id}/password`, { password }),
 };

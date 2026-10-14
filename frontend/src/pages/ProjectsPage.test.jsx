@@ -99,8 +99,8 @@ describe('projects page', () => {
   it('validates a new project before creating it', async () => {
     renderPage();
     await screen.findByText('Build');
-    await userEvent.click(screen.getByRole('button', { name: 'New project' }));
-    const dialog = screen.getByRole('dialog', { name: 'New project' });
+    await userEvent.click(screen.getByRole('button', { name: 'New Project' }));
+    const dialog = screen.getByRole('dialog', { name: 'New Project' });
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save project' }));
 
     expect(within(dialog).getByText('Name is required')).toBeTruthy();

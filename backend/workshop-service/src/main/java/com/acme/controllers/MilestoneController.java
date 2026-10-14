@@ -11,7 +11,8 @@ import com.acme.services.ProjectService;
 
 /**
  * Milestones of one project, under /projects/{projectId}/milestones; DELETE archives a milestone, and GET with
- * ?archived=true lists the archived ones.
+ * ?archived=true lists the archived ones. The assignees routes change only who works on a milestone, so they never
+ * overwrite progress logged at the same time.
  * Admins and the project's manager; employees can only move their own milestones to AWAITING_REVIEW through
  * PUT .../status (checked in {@link ProjectService}).
  */
@@ -43,6 +44,19 @@ public class MilestoneController implements Controller {
                         request -> ApiResponse.ok(service.changeMilestoneStatus(request.param("projectId"),
                                 request.param("milestoneId"), request.body(StatusChange.class).status(),
                                 request.user())))
+                .post("/projects/{projectId}/milestones/{milestoneId}/assignees", ADMINS_AND_MANAGERS,
+                        request -> ApiResponse.ok(service.assign(request.param("projectId"),
+                                request.param("milestoneId"), request.field("employeeId"), request.user())))
+                .delete("/projects/{projectId}/milestones/{milestoneId}/assignees/{employeeId}", ADMINS_AND_MANAGERS,
+                        request -> {
+                            service.unassign(request.param("projectId"), request.param("milestoneId"),
+                                    request.param("employeeId"), request.user());
+                            return ApiResponse.noContent();
+                        })
+                .post("/projects/{projectId}/milestones/{milestoneId}/assignees/{employeeId}/move",
+                        ADMINS_AND_MANAGERS, request -> ApiResponse.ok(service.move(request.param("projectId"),
+                                request.param("milestoneId"), request.param("employeeId"),
+                                request.field("toMilestoneId"), request.user())))
                 .delete("/projects/{projectId}/milestones/{milestoneId}", ADMINS_AND_MANAGERS, request -> {
                     service.archiveMilestone(request.param("projectId"), request.param("milestoneId"),
                             request.user());

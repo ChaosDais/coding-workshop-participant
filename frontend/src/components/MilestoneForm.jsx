@@ -8,7 +8,7 @@ import {
 } from '../utils/validation.js';
 
 const EMPTY = {
-  name: '', description: '', startDate: '', endDate: '', progressTime: '0', status: 'TODO',
+  name: '', description: '', startDate: '', endDate: '', progressTime: '0', expectedHours: '', status: 'TODO',
   assignedEmployees: [], dependsOn: [],
 };
 
@@ -19,16 +19,23 @@ const EMPTY = {
  * @param {{startDate: string, endDate: string}} props.project The project, whose dates bound the milestone's.
  * @param {object[]} props.team Employees on the project manager's team, who can be assigned.
  * @param {object[]} props.milestones The project's other milestones, which it may depend on.
+ * @param {Map<string, string>} props.workingOn For employees on another unfinished milestone of the project, its
+ *   name; an employee works on one unfinished milestone per project, so they cannot be newly assigned here.
  * @param {Map<string, object>} props.usersById Every user, to name assignees who left the team.
  * @param {Function} props.onSubmit Receives the request body; may throw an error to show.
  * @param {Function} props.onCancel Closes the form.
  * @returns {JSX.Element} The form.
  */
 function MilestoneForm({
-  milestone, project, team, milestones, usersById, onSubmit, onCancel,
+  milestone, project, team, milestones, workingOn, usersById, onSubmit, onCancel,
 }) {
   const [values, setValues] = useState(() => (milestone ? {
-    ...EMPTY, ...milestone, description: milestone.description ?? '', progressTime: String(milestone.progressTime),
+    ...EMPTY,
+    ...milestone,
+    description: milestone.description ?? '',
+    progressTime: String(milestone.progressTime),
+    expectedHours: milestone.expectedHours === undefined || milestone.expectedHours === null ? ''
+      : String(milestone.expectedHours),
   } : { ...EMPTY, startDate: project.startDate, endDate: project.endDate }));
   const [errors, setErrors] = useState({});
   const [submitError, setSubmitError] = useState();
@@ -52,6 +59,7 @@ function MilestoneForm({
     const found = compact({
       name: required(values.name, 'Name'),
       progressTime: nonNegativeNumber(values.progressTime, 'Progress'),
+      expectedHours: nonNegativeNumber(values.expectedHours, 'Expected hours', { optional: true }),
       ...range,
     });
     setErrors(found);
@@ -67,6 +75,7 @@ function MilestoneForm({
         startDate: values.startDate,
         endDate: values.endDate,
         progressTime: Number(values.progressTime),
+        expectedHours: values.expectedHours === '' ? undefined : Number(values.expectedHours),
         status: values.status,
         assignedEmployees: values.assignedEmployees,
         dependsOn: values.dependsOn,
@@ -107,6 +116,9 @@ function MilestoneForm({
           <Field id="milestone-progress" label="Progress (hours)" error={errors.progressTime}>
             {(props) => <input id={props.id} type="number" min="0" step="0.25" value={values.progressTime} onChange={set('progressTime')} aria-invalid={props.invalid} aria-describedby={props.describedBy} />}
           </Field>
+          <Field id="milestone-expected" label="Expected hours" error={errors.expectedHours}>
+            {(props) => <input id={props.id} type="number" min="0" step="0.5" value={values.expectedHours} onChange={set('expectedHours')} aria-invalid={props.invalid} aria-describedby={props.describedBy} />}
+          </Field>
           <Field id="milestone-status" label="Status">
             {(props) => (
               <select id={props.id} value={values.status} onChange={set('status')}>
@@ -118,12 +130,18 @@ function MilestoneForm({
         <fieldset className="checkbox-group">
           <legend>Assigned employees</legend>
           {assignable.length === 0 && <p className="muted">The project manager has no employees on their team yet.</p>}
-          {assignable.map((employee) => (
-            <label key={employee.id} className="checkbox">
-              <input type="checkbox" checked={values.assignedEmployees.includes(employee.id)} onChange={() => toggle('assignedEmployees', employee.id)} />
-              {employee.name}
-            </label>
-          ))}
+          {assignable.map((employee) => {
+            const assigned = values.assignedEmployees.includes(employee.id);
+            const alreadyHere = milestone?.assignedEmployees.includes(employee.id);
+            const elsewhere = !alreadyHere && values.status !== 'COMPLETE' ? workingOn.get(employee.id) : undefined;
+            return (
+              <label key={employee.id} className="checkbox">
+                <input type="checkbox" checked={assigned} disabled={Boolean(elsewhere) && !assigned} onChange={() => toggle('assignedEmployees', employee.id)} />
+                {employee.name}
+                {elsewhere && <span className="muted small">{` — already on ${elsewhere}`}</span>}
+              </label>
+            );
+          })}
         </fieldset>
         <fieldset className="checkbox-group">
           <legend>Depends on</legend>
@@ -150,6 +168,7 @@ MilestoneForm.propTypes = {
   project: PropTypes.shape({ startDate: PropTypes.string, endDate: PropTypes.string }).isRequired,
   team: PropTypes.arrayOf(PropTypes.object).isRequired,
   milestones: PropTypes.arrayOf(PropTypes.object).isRequired,
+  workingOn: PropTypes.instanceOf(Map).isRequired,
   usersById: PropTypes.instanceOf(Map).isRequired,
   onSubmit: PropTypes.func.isRequired,
   onCancel: PropTypes.func.isRequired,

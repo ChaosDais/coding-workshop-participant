@@ -17,23 +17,25 @@ class ProjectTest {
 
     @Test
     void invalidModelsAreRejected() {
-        Milestone milestone = new Milestone("m1", "Design", null, START, END, 4.5, List.of("bob"), null, null, null);
+        Milestone milestone = new Milestone("m1", "Design", null, START, END, 4.5, List.of("bob"), null, null, null,
+                null, null);
 
         assertThrows(IllegalArgumentException.class, () -> new Project("p", " ", null, START, END,
-                0, "alice", BigDecimal.ONE, null, null, null, null));
+                0, "alice", BigDecimal.ONE, null, null, null, null, null, null));
         assertThrows(IllegalArgumentException.class, () -> new Project("p", "n", null, END, START,
-                0, "alice", BigDecimal.ONE, null, null, null, null));
+                0, "alice", BigDecimal.ONE, null, null, null, null, null, null));
         assertThrows(IllegalArgumentException.class, () -> new Project("p", "n", null, START, END,
-                0, "alice", new BigDecimal("-1"), null, null, null, null));
+                0, "alice", new BigDecimal("-1"), null, null, null, null, null, null));
         assertThrows(IllegalArgumentException.class, () -> new Project("p", "n", null, START, END,
-                -1, "alice", BigDecimal.ONE, null, null, null, null));
+                -1, "alice", BigDecimal.ONE, null, null, null, null, null, null));
         assertThrows(IllegalArgumentException.class, () -> new Project("p", "n", null, START, END,
-                0, "alice", BigDecimal.ONE, null, List.of(milestone, milestone), null, null));
+                0, "alice", BigDecimal.ONE, null, List.of(milestone, milestone), null, null, null, null));
     }
 
     @Test
     void defaultsAreApplied() {
-        Project project = new Project(null, "n", null, START, START, 0, "m", BigDecimal.ZERO, null, null, null, null);
+        Project project = new Project(null, "n", null, START, START, 0, "m", BigDecimal.ZERO, null, null, null, null,
+                null, null);
 
         assertFalse(project.id().isBlank());
         assertEquals(CompletionStatus.TODO, project.status());

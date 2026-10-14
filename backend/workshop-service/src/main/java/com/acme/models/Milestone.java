@@ -12,10 +12,12 @@ import java.util.UUID;
  * A blank id is replaced with a generated one; progressTime is in hours; the description is optional free text.
  * assignedEmployees holds user ids. completedAt is set by the server when the milestone becomes COMPLETE.
  * dependsOn holds the ids of other milestones in the same project that must be complete before this one starts.
+ * expectedHours is the optional estimate that progressTime is compared against. statusChangedAt is set by the server
+ * when the milestone is created and whenever its status changes, to show how long it has been in its status.
  */
 public record Milestone(String id, String name, String description, LocalDate startDate, LocalDate endDate,
                         double progressTime, List<String> assignedEmployees, CompletionStatus status,
-                        Instant completedAt, List<String> dependsOn) {
+                        Instant completedAt, List<String> dependsOn, Double expectedHours, Instant statusChangedAt) {
     public Milestone {
         id = id == null || id.isBlank() ? UUID.randomUUID().toString() : id.trim();
         name = Checks.text(name, "name");
@@ -26,6 +28,9 @@ public record Milestone(String id, String name, String description, LocalDate st
                 : assignedEmployees.stream().filter(Objects::nonNull).map(String::trim)
                         .filter(employee -> !employee.isEmpty()).distinct().toList();
         status = status == null ? CompletionStatus.TODO : status;
+        if (expectedHours != null) {
+            Checks.nonNegative(expectedHours, "expectedHours");
+        }
         dependsOn = dependsOn == null ? List.of()
                 : dependsOn.stream().filter(Objects::nonNull).map(String::trim)
                         .filter(dependency -> !dependency.isEmpty()).distinct().toList();
@@ -38,11 +43,16 @@ public record Milestone(String id, String name, String description, LocalDate st
 
     public Milestone withStatus(CompletionStatus newStatus, Instant newCompletedAt) {
         return new Milestone(id, name, description, startDate, endDate, progressTime, assignedEmployees, newStatus,
-                newCompletedAt, dependsOn);
+                newCompletedAt, dependsOn, expectedHours, statusChangedAt);
+    }
+
+    public Milestone withStatusChangedAt(Instant newStatusChangedAt) {
+        return new Milestone(id, name, description, startDate, endDate, progressTime, assignedEmployees, status,
+                completedAt, dependsOn, expectedHours, newStatusChangedAt);
     }
 
     public Milestone withProgress(double newProgressTime) {
         return new Milestone(id, name, description, startDate, endDate, newProgressTime, assignedEmployees, status,
-                completedAt, dependsOn);
+                completedAt, dependsOn, expectedHours, statusChangedAt);
     }
 }

@@ -62,7 +62,7 @@ describe('employees page', () => {
     expect(screen.queryByText('Eli Employee')).toBeNull();
     await userEvent.selectOptions(screen.getByLabelText('Role'), '');
 
-    await userEvent.click(screen.getByLabelText('Show archived people'));
+    await userEvent.click(screen.getByLabelText('Show archived users'));
     expect(screen.getByText('Olive Old')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Restore' })).toBeTruthy();
   });
@@ -103,7 +103,7 @@ describe('employees page', () => {
     render(<AuthProvider><EmployeesPage /></AuthProvider>);
     const me = (await screen.findByText('Ada Admin')).closest('tr');
     expect(within(me).queryByRole('button', { name: 'Reset password' })).toBeNull();
-    await userEvent.click(screen.getByLabelText('Show archived people'));
+    await userEvent.click(screen.getByLabelText('Show archived users'));
     const olive = screen.getByText('Olive Old').closest('tr');
     expect(within(olive).queryByRole('button', { name: 'Reset password' })).toBeNull();
   });

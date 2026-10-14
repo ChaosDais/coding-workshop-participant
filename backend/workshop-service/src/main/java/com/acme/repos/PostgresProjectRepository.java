@@ -26,10 +26,10 @@ import java.util.Optional;
 public class PostgresProjectRepository implements ProjectRepository {
     private static final String PROJECT_COLUMNS =
             "id, name, start_date, end_date, progress_time, manager, budget, status, description, completed_at,"
-                    + " depends_on";
+                    + " depends_on, expected_hours, status_changed_at";
     private static final String MILESTONE_COLUMNS =
             "project_id, id, name, start_date, end_date, progress_time, assigned_employees, status, description,"
-                    + " completed_at, depends_on";
+                    + " completed_at, depends_on, expected_hours, status_changed_at";
 
     private final PostgresDatabase database;
 
@@ -41,7 +41,7 @@ public class PostgresProjectRepository implements ProjectRepository {
     public void insert(Project project) {
         database.run(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
-                    "INSERT INTO projects (" + PROJECT_COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                    "INSERT INTO projects (" + PROJECT_COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
                 statement.setString(1, project.id());
                 statement.setString(2, project.name());
                 statement.setObject(3, project.startDate());
@@ -53,6 +53,8 @@ public class PostgresProjectRepository implements ProjectRepository {
                 statement.setString(9, project.description());
                 statement.setObject(10, utc(project.completedAt()));
                 statement.setArray(11, connection.createArrayOf("text", project.dependsOn().toArray()));
+                statement.setObject(12, project.expectedHours());
+                statement.setObject(13, utc(project.statusChangedAt()));
                 statement.executeUpdate();
             }
             saveMilestones(connection, project);
@@ -110,7 +112,8 @@ public class PostgresProjectRepository implements ProjectRepository {
         return database.run(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
                     "UPDATE projects SET name = ?, start_date = ?, end_date = ?, progress_time = ?, manager = ?,"
-                            + " budget = ?, status = ?, description = ?, completed_at = ?, depends_on = ?"
+                            + " budget = ?, status = ?, description = ?, completed_at = ?, depends_on = ?,"
+                            + " expected_hours = ?, status_changed_at = ?"
                             + " WHERE id = ? AND archived_at IS NULL")) {
                 statement.setString(1, project.name());
                 statement.setObject(2, project.startDate());
@@ -122,7 +125,9 @@ public class PostgresProjectRepository implements ProjectRepository {
                 statement.setString(8, project.description());
                 statement.setObject(9, utc(project.completedAt()));
                 statement.setArray(10, connection.createArrayOf("text", project.dependsOn().toArray()));
-                statement.setString(11, project.id());
+                statement.setObject(11, project.expectedHours());
+                statement.setObject(12, utc(project.statusChangedAt()));
+                statement.setString(13, project.id());
                 if (statement.executeUpdate() == 0) {
                     return false;
                 }
@@ -142,19 +147,43 @@ public class PostgresProjectRepository implements ProjectRepository {
 
     @Override
     public boolean setMilestoneStatus(String projectId, String milestoneId, CompletionStatus status,
-                                      Instant completedAt) {
+                                      Instant completedAt, Instant statusChangedAt) {
         return database.run(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
-                    "UPDATE milestones SET status = ?, completed_at = ?"
+                    "UPDATE milestones SET status = ?, completed_at = ?, status_changed_at = ?"
                             + " WHERE project_id = ? AND id = ? AND archived_at IS NULL"
                             + " AND EXISTS (SELECT 1 FROM projects WHERE id = ? AND archived_at IS NULL)")) {
                 statement.setString(1, status.name());
                 statement.setObject(2, utc(completedAt));
-                statement.setString(3, projectId);
-                statement.setString(4, milestoneId);
-                statement.setString(5, projectId);
+                statement.setObject(3, utc(statusChangedAt));
+                statement.setString(4, projectId);
+                statement.setString(5, milestoneId);
+                statement.setString(6, projectId);
                 return statement.executeUpdate() > 0;
             }
+        });
+    }
+
+    @Override
+    public boolean setAssignees(String projectId, Map<String, List<String>> assigneesByMilestone) {
+        return database.run(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "UPDATE milestones SET assigned_employees = ?"
+                            + " WHERE project_id = ? AND id = ? AND archived_at IS NULL"
+                            + " AND EXISTS (SELECT 1 FROM projects WHERE id = ? AND archived_at IS NULL)")) {
+                for (Map.Entry<String, List<String>> change : assigneesByMilestone.entrySet()) {
+                    statement.setArray(1, connection.createArrayOf("text", change.getValue().toArray()));
+                    statement.setString(2, projectId);
+                    statement.setString(3, change.getKey());
+                    statement.setString(4, projectId);
+                    if (statement.executeUpdate() == 0) {
+                        // Undoes the milestones already changed in this transaction.
+                        connection.rollback();
+                        return false;
+                    }
+                }
+            }
+            return true;
         });
     }
 
@@ -190,10 +219,11 @@ public class PostgresProjectRepository implements ProjectRepository {
     private static void saveMilestones(Connection connection, Project project) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO milestones (" + MILESTONE_COLUMNS + ", sort_order)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                         + " ON CONFLICT (project_id, id) DO UPDATE SET name = EXCLUDED.name,"
                         + " description = EXCLUDED.description, completed_at = EXCLUDED.completed_at,"
-                        + " depends_on = EXCLUDED.depends_on,"
+                        + " depends_on = EXCLUDED.depends_on, expected_hours = EXCLUDED.expected_hours,"
+                        + " status_changed_at = EXCLUDED.status_changed_at,"
                         + " start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date,"
                         + " progress_time = EXCLUDED.progress_time, assigned_employees = EXCLUDED.assigned_employees,"
                         + " status = EXCLUDED.status, sort_order = EXCLUDED.sort_order"
@@ -212,7 +242,9 @@ public class PostgresProjectRepository implements ProjectRepository {
                 statement.setString(9, milestone.description());
                 statement.setObject(10, utc(milestone.completedAt()));
                 statement.setArray(11, connection.createArrayOf("text", milestone.dependsOn().toArray()));
-                statement.setInt(12, sortOrder++);
+                statement.setObject(12, milestone.expectedHours());
+                statement.setObject(13, utc(milestone.statusChangedAt()));
+                statement.setInt(14, sortOrder++);
                 statement.addBatch();
             }
             int[] counts = statement.executeBatch();
@@ -254,7 +286,9 @@ public class PostgresProjectRepository implements ProjectRepository {
                             List.of((String[]) row.getArray("assigned_employees").getArray()),
                             CompletionStatus.valueOf(row.getString("status")),
                             instant(row, "completed_at"),
-                            List.of((String[]) row.getArray("depends_on").getArray())));
+                            List.of((String[]) row.getArray("depends_on").getArray()),
+                            expectedHours(row),
+                            instant(row, "status_changed_at")));
                 }
             }
         }
@@ -274,7 +308,15 @@ public class PostgresProjectRepository implements ProjectRepository {
                 CompletionStatus.valueOf(row.getString("status")),
                 milestones,
                 instant(row, "completed_at"),
-                List.of((String[]) row.getArray("depends_on").getArray()));
+                List.of((String[]) row.getArray("depends_on").getArray()),
+                expectedHours(row),
+                instant(row, "status_changed_at"));
+    }
+
+    /** The optional estimate, null when none was set. */
+    private static Double expectedHours(ResultSet row) throws SQLException {
+        double value = row.getDouble("expected_hours");
+        return row.wasNull() ? null : value;
     }
 
     private static OffsetDateTime utc(Instant instant) {

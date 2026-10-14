@@ -1,6 +1,7 @@
 package com.acme.repos;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
@@ -11,5 +12,15 @@ public class InMemorySettingsRepository implements SettingsRepository {
     @Override
     public String getOrCreate(String name, Supplier<String> initialValue) {
         return settings.computeIfAbsent(name, key -> initialValue.get());
+    }
+
+    @Override
+    public Optional<String> get(String name) {
+        return Optional.ofNullable(settings.get(name));
+    }
+
+    @Override
+    public void put(String name, String value) {
+        settings.put(name, value);
     }
 }

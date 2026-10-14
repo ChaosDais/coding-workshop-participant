@@ -5,18 +5,42 @@ import ApiTester from './pages/ApiTester.jsx';
 import AuditLogPage from './pages/AuditLogPage.jsx';
 import ChangePasswordPage from './pages/ChangePasswordPage.jsx';
 import EmployeesPage from './pages/EmployeesPage.jsx';
+import OptionsPage from './pages/OptionsPage.jsx';
 import OtherRolePage from './pages/OtherRolePage.jsx';
 import ProjectDetailPage from './pages/ProjectDetailPage.jsx';
 import ProjectsPage from './pages/ProjectsPage.jsx';
 import SignInPage from './pages/SignInPage.jsx';
+import TeamPage from './pages/TeamPage.jsx';
+import { SettingsProvider } from './settings/SettingsContext.jsx';
+
+/** The page for the current address and role, below the navigation bar. */
+function pageFor(user, section, id) {
+  if (section === 'options') {
+    return <OptionsPage tab={id} />;
+  }
+  if (user.role === 'EMPLOYEE') {
+    return <OtherRolePage />;
+  }
+  const isAdmin = user.role === 'ADMIN';
+  if (section === 'employees') {
+    return isAdmin ? <EmployeesPage /> : <TeamPage />;
+  }
+  if (section === 'audit' && isAdmin) {
+    return <AuditLogPage />;
+  }
+  if (section === 'projects' && id) {
+    return <ProjectDetailPage key={id} projectId={id} />;
+  }
+  return <ProjectsPage />;
+}
 
 /**
- * Chooses the screen: sign-in when signed out, the forced password change for the premade admin, the admin
- * views for admins, and a placeholder for other roles until their views exist. #/tester is the developer API tester.
+ * Chooses the screen: sign-in when signed out, the forced password change for the premade admin, then the
+ * navigation bar and the page for the address. #/tester is the developer API tester.
  * @returns {JSX.Element} The current screen.
  */
 function Routes() {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const [section = 'projects', id] = useHashRoute();
 
   if (section === 'tester') {
@@ -26,30 +50,13 @@ function Routes() {
     return <SignInPage />;
   }
   if (user.passwordChangeRequired) {
-    return <ChangePasswordPage forced />;
-  }
-  const changingPassword = section === 'account' && id === 'password';
-  if (user.role !== 'ADMIN') {
-    return changingPassword ? <ChangePasswordPage forced={false} /> : <OtherRolePage />;
-  }
-
-  let page;
-  if (changingPassword) {
-    page = <ChangePasswordPage forced={false} />;
-  } else if (section === 'employees') {
-    page = <EmployeesPage />;
-  } else if (section === 'audit') {
-    page = <AuditLogPage />;
-  } else if (section === 'projects' && id) {
-    page = <ProjectDetailPage key={id} projectId={id} />;
-  } else {
-    page = <ProjectsPage />;
+    return <ChangePasswordPage />;
   }
   return (
-    <>
-      <NavBar section={section} user={user} onSignOut={signOut} />
-      {page}
-    </>
+    <SettingsProvider signedIn>
+      <NavBar section={section} user={user} />
+      {pageFor(user, section, id)}
+    </SettingsProvider>
   );
 }
 

@@ -13,20 +13,31 @@ import java.util.List;
  * reveal what colleagues earn.
  */
 public record ProjectView(String id, String name, String description, LocalDate startDate, LocalDate endDate,
-                         double progressTime, String manager, BigDecimal budget, BigDecimal spent,
-                         CompletionStatus status, Instant completedAt, List<String> dependsOn,
-                         List<Milestone> milestones) {
+                         double progressTime, Double expectedHours, String manager, BigDecimal budget, BigDecimal spent,
+                         CompletionStatus status, Instant completedAt, Instant statusChangedAt, List<String> dependsOn,
+                         List<Dependency> dependencies, List<Milestone> milestones) {
 
-    public static ProjectView full(Project project, BigDecimal spent) {
-        return new ProjectView(project.id(), project.name(), project.description(), project.startDate(),
-                project.endDate(), milestoneProgress(project), project.manager(), project.budget(), spent,
-                project.status(), project.completedAt(), project.dependsOn(), project.milestones());
+    /**
+     * A project this one depends on, named so every viewer can tell whether it is complete, even one who cannot
+     * open that project.
+     */
+    public record Dependency(String id, String name, CompletionStatus status, boolean archived) {
     }
 
-    public static ProjectView forEmployee(Project project) {
+    public static ProjectView full(Project project, BigDecimal spent, List<Dependency> dependencies) {
         return new ProjectView(project.id(), project.name(), project.description(), project.startDate(),
-                project.endDate(), milestoneProgress(project), project.manager(), null, null, project.status(),
-                project.completedAt(), project.dependsOn(), project.milestones());
+                project.endDate(), milestoneProgress(project), project.expectedHours(), project.manager(),
+                project.budget(), spent,
+                project.status(), project.completedAt(), project.statusChangedAt(), project.dependsOn(), dependencies,
+                project.milestones());
+    }
+
+    public static ProjectView forEmployee(Project project, List<Dependency> dependencies) {
+        return new ProjectView(project.id(), project.name(), project.description(), project.startDate(),
+                project.endDate(), milestoneProgress(project), project.expectedHours(), project.manager(), null, null,
+                project.status(),
+                project.completedAt(), project.statusChangedAt(), project.dependsOn(), dependencies,
+                project.milestones());
     }
 
     /** Hours across all the project's active milestones, rounded to hundredths. */
