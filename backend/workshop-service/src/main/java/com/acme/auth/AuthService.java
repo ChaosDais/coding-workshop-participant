@@ -66,6 +66,19 @@ public class AuthService {
         tokens.revokeRefreshToken(refreshToken);
     }
 
+    /**
+     * Lets anyone change their own name and email; role, manager, job type and salary stay as they are and only
+     * an admin can change them.
+     */
+    public User updateProfile(User user, String name, String email) {
+        User updated = new User(user.id(), email, name, user.role(), user.managerId(), user.jobType(), user.salary(),
+                false);
+        users.update(updated);
+        auditService.recordAction("profile_updated", updated.email(), Map.of("userId", user.id(),
+                "previousEmail", user.email()));
+        return updated;
+    }
+
     /** Changes the caller's own password and signs them out everywhere else. */
     public void changePassword(User user, String currentPassword, String newPassword) {
         String currentHash = users.findByEmail(user.email()).map(UserStore.Credentials::passwordHash).orElse(null);

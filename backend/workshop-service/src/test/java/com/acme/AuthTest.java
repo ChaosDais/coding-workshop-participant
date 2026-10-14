@@ -123,34 +123,6 @@ class AuthTest {
         app.signIn(ADMIN_EMAIL, "new-password-1");
     }
 
-    /** Until employee permissions are defined, employees can only use their own account endpoints. */
-    @Test
-    void employeesAreDeniedEverythingButTheirOwnAccount() {
-        String adminToken = app.setUpAdmin();
-        String managerId = app.createUser(adminToken, "manager@example.com", "MANAGER", null);
-        app.createUser(adminToken, "employee@example.com", "EMPLOYEE", managerId);
-
-        List<String[]> denied = List.of(
-                new String[] {"GET", "/projects"}, new String[] {"GET", "/projects?archived=true"},
-                new String[] {"POST", "/projects"}, new String[] {"GET", "/projects/p"},
-                new String[] {"PUT", "/projects/p"}, new String[] {"DELETE", "/projects/p"},
-                new String[] {"POST", "/projects/p/restore"}, new String[] {"POST", "/projects/p/milestones"},
-                new String[] {"PUT", "/projects/p/milestones/m"}, new String[] {"DELETE", "/projects/p/milestones/m"},
-                new String[] {"GET", "/audit"}, new String[] {"GET", "/users"}, new String[] {"POST", "/users"},
-                new String[] {"GET", "/users/u"}, new String[] {"PUT", "/users/u"}, new String[] {"DELETE", "/users/u"},
-                new String[] {"POST", "/users/u/restore"}, new String[] {"PUT", "/users/u/manager"},
-                new String[] {"PUT", "/users/u/password"});
-
-        String token = app.signIn("employee@example.com", PASSWORD).get("accessToken").getAsString();
-        for (String[] route : denied) {
-            Map<String, Object> response = app.send(route[0], route[1], "{}", token);
-            assertEquals(403, status(response), route[0] + " " + route[1]);
-            assertEquals("Access denied", error(response));
-        }
-        assertEquals("employee@example.com", body(app.send("GET", "/auth/me", null, token)).getAsJsonObject()
-                .get("email").getAsString());
-    }
-
     private static String refresh(String token) {
         return "{\"refreshToken\": \"" + token + "\"}";
     }

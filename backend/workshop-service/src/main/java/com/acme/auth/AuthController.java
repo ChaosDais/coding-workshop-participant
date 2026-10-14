@@ -7,7 +7,7 @@ import com.acme.http.Router;
 
 /**
  * POST /auth/setup creates the first admin while no users exist; sign-in, refresh and sign-out are public;
- * /auth/me and changing your own password need any signed-in user.
+ * viewing and editing your own name and email (/auth/me) and changing your password need any signed-in user.
  */
 public class AuthController implements Controller {
     private final AuthService service;
@@ -29,6 +29,8 @@ public class AuthController implements Controller {
                     return ApiResponse.noContent();
                 })
                 .get("/auth/me", Access.SIGNED_IN, request -> ApiResponse.ok(request.user()))
+                .put("/auth/me", Access.SIGNED_IN, request -> ApiResponse.ok(service.updateProfile(
+                        request.user(), request.field("name"), request.field("email"))))
                 .post("/auth/password", Access.SIGNED_IN, request -> {
                     service.changePassword(request.user(), request.field("currentPassword"),
                             request.field("newPassword"));

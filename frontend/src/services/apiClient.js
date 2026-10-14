@@ -48,6 +48,20 @@ export function parseJson(text) {
 }
 
 /**
+ * Swaps a refresh token for a new access and refresh token; each refresh token works once.
+ * @param {string} service Backend service name.
+ * @param {string} refreshToken Current refresh token.
+ * @returns {Promise<{accessToken: string, refreshToken: string}|undefined>} New tokens, or undefined on failure.
+ */
+export async function refreshTokens(service, refreshToken) {
+  const result = await sendRequest({
+    service, method: 'POST', path: '/auth/refresh', body: JSON.stringify({ refreshToken }),
+  });
+  const session = result.ok ? parseJson(result.body) : undefined;
+  return session?.accessToken ? { accessToken: session.accessToken, refreshToken: session.refreshToken } : undefined;
+}
+
+/**
  * Sends one request and reports the outcome; network failures are returned, not thrown.
  * @param {{service: string, method: string, path: string, body: string, accessToken?: string}} request
  *   Request to send; an access token is sent as a bearer token.

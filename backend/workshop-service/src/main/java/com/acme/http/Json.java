@@ -12,6 +12,7 @@ import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 
@@ -21,6 +22,7 @@ public final class Json {
             // Responses are JSON, not HTML, so characters like ' stay readable instead of becoming \u0027.
             .disableHtmlEscaping()
             .registerTypeAdapter(LocalDate.class, new LocalDateAdapter().nullSafe())
+            .registerTypeAdapter(Instant.class, new InstantAdapter().nullSafe())
             .registerTypeAdapter(CompletionStatus.class, (JsonDeserializer<CompletionStatus>) (json, type, context) ->
                     parseStatus(json.getAsString()))
             .create();
@@ -73,7 +75,26 @@ public final class Json {
         try {
             return CompletionStatus.valueOf(value);
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("status must be one of TODO, IN_PROGRESS, COMPLETE");
+            throw new IllegalArgumentException("status must be one of TODO, IN_PROGRESS, AWAITING_REVIEW, COMPLETE");
+        }
+    }
+
+    /** Timestamps are written as ISO-8601 in UTC, e.g. 2026-10-14T12:00:00Z. */
+    private static class InstantAdapter extends TypeAdapter<Instant> {
+        @Override
+        public void write(JsonWriter out, Instant value) throws IOException {
+            out.value(value.toString());
+        }
+
+        @Override
+        public Instant read(JsonReader in) throws IOException {
+            String value = in.nextString();
+            try {
+                return Instant.parse(value);
+            } catch (DateTimeParseException e) {
+                throw new IllegalArgumentException("Timestamps must use ISO-8601, e.g. 2026-10-14T12:00:00Z: "
+                        + value);
+            }
         }
     }
 

@@ -10,9 +10,10 @@ import com.acme.projects.ProjectService;
 import com.acme.repos.InMemoryAuditStore;
 import com.acme.repos.InMemoryProjectStore;
 import com.acme.repos.InMemoryRefreshTokenStore;
+import com.acme.repos.InMemoryTimeEntryStore;
 import com.acme.repos.InMemorySettingsStore;
 import com.acme.repos.InMemoryUserStore;
-import com.acme.repos.ProjectStore;
+import com.acme.timelog.TimeService;
 import com.acme.users.UserService;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
@@ -44,8 +45,9 @@ class TestApp {
         this(new InMemoryProjectStore());
     }
 
-    TestApp(ProjectStore projects) {
+    TestApp(InMemoryProjectStore projects) {
         AuditService audit = new AuditService(new InMemoryAuditStore());
+        InMemoryTimeEntryStore timeEntries = new InMemoryTimeEntryStore(projects);
         // The lowest BCrypt cost keeps the tests fast; production uses 10.
         PasswordHasher passwords = new PasswordHasher(4);
         TokenService tokens = new TokenService(new InMemorySettingsStore(), refreshTokens, clock);
@@ -53,7 +55,8 @@ class TestApp {
         handler = new Handler(config.router(new TokenAuthenticator(tokens, users),
                 new AuthService(users, passwords, tokens, audit),
                 new UserService(users, projects, passwords, tokens, audit),
-                new ProjectService(projects, users, audit), audit));
+                new ProjectService(projects, users, timeEntries, audit),
+                new TimeService(timeEntries, projects, users, audit, clock), audit));
     }
 
     /** Sends a request; a path may carry a query string, and a null token sends no Authorization header. */

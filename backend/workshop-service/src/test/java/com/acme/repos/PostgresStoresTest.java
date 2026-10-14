@@ -6,6 +6,7 @@ import com.acme.models.CompletionStatus;
 import com.acme.models.Milestone;
 import com.acme.models.Project;
 import com.acme.models.Role;
+import com.acme.models.TimeEntry;
 import com.acme.models.User;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -179,6 +180,75 @@ class PostgresStoresTest {
 
                 assertEquals(3, count(admin, schema, "users"));
                 assertEquals(2, count(admin, schema, "refresh_tokens"));
+            } finally {
+                statement.execute("DROP SCHEMA " + schema + " CASCADE");
+            }
+        }
+    }
+
+    /** Time entries add to milestone progress and project cost, and the database allows one running timer each. */
+    @Test
+    void timeEntriesRoundTripThroughPostgres() throws SQLException {
+        String url = System.getenv("POSTGRES_TEST_URL");
+        Assumptions.assumeTrue(url != null && !url.isBlank(), "POSTGRES_TEST_URL is not set");
+
+        String schema = "workshop_test_" + UUID.randomUUID().toString().replace("-", "");
+        try (Connection admin = DriverManager.getConnection(url); Statement statement = admin.createStatement()) {
+            statement.execute("CREATE SCHEMA " + schema);
+            try {
+                PostgresDatabase database = new PostgresDatabase(
+                        url + (url.contains("?") ? "&" : "?") + "currentSchema=" + schema, null, null);
+                new PostgresUserStore(database).insert(
+                        new User("e1", "e1@example.com", "E1", Role.EMPLOYEE, null, null, null, false), "hash");
+                ProjectStore projects = new PostgresProjectStore(database);
+                Milestone milestone = new Milestone("m1", "Design", null, LocalDate.of(2026, 1, 1),
+                        LocalDate.of(2026, 2, 1), 1.0, List.of("e1"), CompletionStatus.IN_PROGRESS);
+                projects.insert(new Project("p1", "Apollo", null, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
+                        0, "m", BigDecimal.TEN, null, List.of(milestone)));
+                TimeEntryStore entries = new PostgresTimeEntryStore(database);
+                Instant start = Instant.parse("2026-10-14T09:00:00Z");
+
+                TimeEntry manual = new TimeEntry("t1", "p1", "m1", "e1", TimeEntry.Source.MANUAL, "Wireframes", null,
+                        null, new BigDecimal("2.50"), new BigDecimal("50.0000"), new BigDecimal("125.00"), start, null, null, null);
+                entries.insertLogged(manual);
+                assertEquals(3.5, projects.findById("p1").orElseThrow().milestones().get(0).progressTime());
+
+                TimeEntry timer = new TimeEntry("t2", "p1", "m1", "e1", TimeEntry.Source.TIMER, null, start, null,
+                        null, null, null, start, null, null, null);
+                entries.insertRunning(timer);
+                assertThrows(ConflictException.class, () -> entries.insertRunning(new TimeEntry("t3", "p1", "m1",
+                        "e1", TimeEntry.Source.TIMER, null, start, null, null, null, null, start, null, null, null)));
+                assertEquals(timer, entries.findRunning("e1").orElseThrow());
+
+                Instant end = start.plusSeconds(5400);
+                TimeEntry stopped = new TimeEntry("t2", "p1", "m1", "e1", TimeEntry.Source.TIMER, null, start, end,
+                        new BigDecimal("1.50"), new BigDecimal("50.0000"), new BigDecimal("75.00"), end, null, null, null);
+                assertTrue(entries.stop(stopped));
+                assertFalse(entries.stop(stopped));
+                assertTrue(entries.findRunning("e1").isEmpty());
+                assertEquals(5.0, projects.findById("p1").orElseThrow().milestones().get(0).progressTime());
+                assertEquals(List.of(manual, stopped), entries.findForMilestone("p1", "m1"));
+                assertEquals(0, new BigDecimal("200.00").compareTo(entries.totalCostByProject().get("p1")));
+
+                // A correction moves progress by the difference, and only applies to the hours it was based on.
+                Instant fixedAt = end.plusSeconds(60);
+                TimeEntry corrected = new TimeEntry("t1", "p1", "m1", "e1", TimeEntry.Source.MANUAL, "Wireframes",
+                        null, null, new BigDecimal("0.50"), new BigDecimal("50.0000"), new BigDecimal("25.00"), start,
+                        fixedAt, "admin@example.com", "Typo");
+                assertTrue(entries.correct(corrected, new BigDecimal("2.50")));
+                assertFalse(entries.correct(corrected, new BigDecimal("2.50")));
+                assertEquals(corrected, entries.findById("t1").orElseThrow());
+                assertEquals(3.0, projects.findById("p1").orElseThrow().milestones().get(0).progressTime());
+                assertEquals(0, new BigDecimal("100.00").compareTo(entries.totalCostByProject().get("p1")));
+
+                // Changing the status leaves the logged progress alone.
+                assertTrue(projects.setMilestoneStatus("p1", "m1", CompletionStatus.AWAITING_REVIEW));
+                Milestone reviewed = projects.findById("p1").orElseThrow().milestones().get(0);
+                assertEquals(CompletionStatus.AWAITING_REVIEW, reviewed.status());
+                assertEquals(3.0, reviewed.progressTime());
+                assertFalse(projects.setMilestoneStatus("p1", "missing", CompletionStatus.COMPLETE));
+                assertTrue(projects.archive("p1"));
+                assertFalse(projects.setMilestoneStatus("p1", "m1", CompletionStatus.COMPLETE));
             } finally {
                 statement.execute("DROP SCHEMA " + schema + " CASCADE");
             }

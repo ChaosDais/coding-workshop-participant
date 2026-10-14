@@ -74,11 +74,37 @@ public class PostgresDatabase {
                 name TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             )""",
+            """
+            CREATE TABLE IF NOT EXISTS time_entries (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                milestone_id TEXT NOT NULL,
+                user_id TEXT NOT NULL REFERENCES users (id),
+                source TEXT NOT NULL,
+                note TEXT,
+                started_at TIMESTAMPTZ,
+                ended_at TIMESTAMPTZ,
+                hours NUMERIC,
+                hourly_rate NUMERIC,
+                cost NUMERIC,
+                logged_at TIMESTAMPTZ NOT NULL,
+                corrected_at TIMESTAMPTZ,
+                corrected_by TEXT,
+                correction_reason TEXT,
+                FOREIGN KEY (project_id, milestone_id) REFERENCES milestones (project_id, id)
+            )""",
+            // An employee works toward one milestone at a time, so at most one timer runs per user.
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS time_entries_one_running_timer
+                ON time_entries (user_id) WHERE source = 'TIMER' AND ended_at IS NULL""",
             // Upgrades tables created by earlier versions; rows are archived, never deleted.
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS job_type TEXT",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS salary NUMERIC",
             "ALTER TABLE milestones ADD COLUMN IF NOT EXISTS description TEXT",
             "ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT",
+            "ALTER TABLE time_entries ADD COLUMN IF NOT EXISTS corrected_at TIMESTAMPTZ",
+            "ALTER TABLE time_entries ADD COLUMN IF NOT EXISTS corrected_by TEXT",
+            "ALTER TABLE time_entries ADD COLUMN IF NOT EXISTS correction_reason TEXT",
             "ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ",
             "ALTER TABLE milestones ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ",
             // Older tables deleted milestones along with their project; now deleting a referenced project fails.

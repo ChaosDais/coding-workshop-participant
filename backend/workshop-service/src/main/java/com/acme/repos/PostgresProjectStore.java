@@ -131,6 +131,21 @@ public class PostgresProjectStore implements ProjectStore {
     }
 
     @Override
+    public boolean setMilestoneStatus(String projectId, String milestoneId, CompletionStatus status) {
+        return database.run(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "UPDATE milestones SET status = ? WHERE project_id = ? AND id = ? AND archived_at IS NULL"
+                            + " AND EXISTS (SELECT 1 FROM projects WHERE id = ? AND archived_at IS NULL)")) {
+                statement.setString(1, status.name());
+                statement.setString(2, projectId);
+                statement.setString(3, milestoneId);
+                statement.setString(4, projectId);
+                return statement.executeUpdate() > 0;
+            }
+        });
+    }
+
+    @Override
     public boolean archive(String id) {
         return setArchived(id, true);
     }

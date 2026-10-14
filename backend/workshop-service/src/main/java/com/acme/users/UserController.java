@@ -9,11 +9,11 @@ import com.acme.models.User;
 
 /**
  * Account management under /users; DELETE archives a user, and ?archived=true lists archived ones.
- * Admins do everything; managers can only list and look up their own team (checked in {@link UserService}).
+ * Admins do everything; managers and employees can only list and look up their own team
+ * (checked in {@link UserService}).
  */
 public class UserController implements Controller {
     private static final Access ADMIN_ONLY = Access.roles(Role.ADMIN);
-    private static final Access ADMINS_AND_MANAGERS = Access.roles(Role.ADMIN, Role.MANAGER);
 
     private final UserService service;
 
@@ -23,11 +23,11 @@ public class UserController implements Controller {
 
     @Override
     public void register(Router router) {
-        router.get("/users", ADMINS_AND_MANAGERS, request -> ApiResponse.ok(
+        router.get("/users", Access.SIGNED_IN, request -> ApiResponse.ok(
                         service.findAll(request.booleanQuery("archived"), request.user())))
                 .post("/users", ADMIN_ONLY, request -> ApiResponse.created(service.create(
                         request.body(User.class), request.field("password"), request.user())))
-                .get("/users/{id}", ADMINS_AND_MANAGERS, request -> ApiResponse.ok(
+                .get("/users/{id}", Access.SIGNED_IN, request -> ApiResponse.ok(
                         service.require(request.param("id"), request.user())))
                 .put("/users/{id}", ADMIN_ONLY, request -> ApiResponse.ok(service.update(
                         request.param("id"), request.body(User.class), request.user())))

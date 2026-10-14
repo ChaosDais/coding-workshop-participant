@@ -1,15 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import PresetList from '../components/PresetList.jsx';
 import RequestForm from '../components/RequestForm.jsx';
 import ResponsePanel from '../components/ResponsePanel.jsx';
+import TimerPanel from '../components/TimerPanel.jsx';
 import {
-  buildUrl, fillPlaceholders, getServiceNames, parseJson, sendRequest,
+  buildUrl, fillPlaceholders, getServiceNames, parseJson, refreshTokens, sendRequest,
 } from '../services/apiClient.js';
 import { PRESETS, VALUE_FIELDS } from '../services/presets.js';
 
 const DEFAULT_SERVICE = 'workshop-service';
 
 const serviceNames = [...new Set([DEFAULT_SERVICE, ...getServiceNames()])];
+
+/** Access tokens last 15 minutes; renewing every 10 keeps a long-running timer signed in. */
+const TOKEN_REFRESH_MS = 10 * 60 * 1000;
 
 /**
  * Page for sending test requests to the backend and inspecting the raw responses.
@@ -25,8 +29,24 @@ function ApiTester() {
   const [activePreset, setActivePreset] = useState(PRESETS[0]);
   const [response, setResponse] = useState();
   const [sending, setSending] = useState(false);
+  // Bumped after every request so the timer panel re-checks straight away, e.g. after Start timer.
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const resolvedPath = fillPlaceholders(request.path, values);
+
+  // While signed in, renew the tokens before the access token expires.
+  useEffect(() => {
+    if (!values.refreshToken) {
+      return undefined;
+    }
+    const renew = setInterval(async () => {
+      const tokens = await refreshTokens(request.service, values.refreshToken);
+      if (tokens) {
+        setValues((current) => ({ ...current, ...tokens }));
+      }
+    }, TOKEN_REFRESH_MS);
+    return () => clearInterval(renew);
+  }, [request.service, values.refreshToken]);
 
   const updateRequest = (field, value) => {
     setRequest((current) => ({ ...current, [field]: value }));
@@ -52,6 +72,7 @@ function ApiTester() {
     });
     setResponse(result);
     setSending(false);
+    setRefreshKey((key) => key + 1);
 
     // Presets name the response fields to remember, e.g. the new project's id or the tokens from sign-in.
     const parsed = result.ok && activePreset?.capture ? parseJson(result.body) : undefined;
@@ -69,6 +90,12 @@ function ApiTester() {
       <div className="layout">
         <PresetList presets={PRESETS} activeId={activePreset?.id} onSelect={selectPreset} />
         <div className="panels">
+          <TimerPanel
+            service={request.service}
+            accessToken={values.accessToken}
+            refreshKey={refreshKey}
+            onResult={setResponse}
+          />
           <RequestForm
             request={request}
             fields={VALUE_FIELDS}

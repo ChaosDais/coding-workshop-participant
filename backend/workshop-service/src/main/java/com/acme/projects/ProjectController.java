@@ -10,11 +10,13 @@ import com.acme.models.Role;
 
 /**
  * CRUD for /projects; DELETE archives a project, and archived ones are listed with ?archived=true.
- * Admins do everything; managers view and edit the projects they manage (checked in {@link ProjectService}).
+ * Admins do everything; managers view and edit the projects they manage; employees view the projects they work
+ * on (checked in {@link ProjectService}).
  */
 public class ProjectController implements Controller {
     private static final Access ADMIN_ONLY = Access.roles(Role.ADMIN);
     private static final Access ADMINS_AND_MANAGERS = Access.roles(Role.ADMIN, Role.MANAGER);
+    private static final Access EVERYONE = Access.SIGNED_IN;
 
     private final ProjectService service;
 
@@ -24,12 +26,12 @@ public class ProjectController implements Controller {
 
     @Override
     public void register(Router router) {
-        router.get("/projects", ADMINS_AND_MANAGERS, request -> ApiResponse.ok(
+        router.get("/projects", EVERYONE, request -> ApiResponse.ok(
                         service.findAll(request.booleanQuery("archived"), request.user())))
                 .post("/projects", ADMIN_ONLY, request -> ApiResponse.created(
                         service.create(request.body(Project.class), request.user())))
-                .get("/projects/{id}", ADMINS_AND_MANAGERS, request -> ApiResponse.ok(
-                        service.require(request.param("id"), request.user())))
+                .get("/projects/{id}", EVERYONE, request -> ApiResponse.ok(
+                        service.get(request.param("id"), request.user())))
                 .put("/projects/{id}", ADMINS_AND_MANAGERS, this::update)
                 .delete("/projects/{id}", ADMIN_ONLY, request -> {
                     service.archive(request.param("id"), request.user());

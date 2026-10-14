@@ -73,6 +73,11 @@ public record ApiRequest(String method, List<String> segments, Map<String, Strin
         return value != null && value.isJsonPrimitive() ? value.getAsString() : null;
     }
 
+    /** Like {@link #field}, but for requests where the whole body is optional: no body means null. */
+    public String optionalField(String name) {
+        return body == null || body.isBlank() ? null : field(name);
+    }
+
     ApiRequest withParams(Map<String, String> routeParams) {
         return new ApiRequest(method, segments, query, headers, routeParams, body, user);
     }

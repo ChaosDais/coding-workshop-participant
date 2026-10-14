@@ -17,8 +17,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Account management. Admins see and manage every account; managers can only look up the active employees on
- * their own team, without salaries. Users are archived, never deleted, and the rules keep the data consistent:
+ * Account management. Admins see and manage every account. Managers can look up the active employees on their
+ * team; employees can look up their manager and their teammates; neither sees salaries.
+ * Users are archived, never deleted, and the rules keep the data consistent:
  * at least one active admin always remains, and a manager with active employees or projects cannot be archived
  * or given another role until those are moved to someone else.
  */
@@ -38,7 +39,10 @@ public class UserService {
         this.auditService = auditService;
     }
 
-    /** Admins see every account; managers see the active employees on their team. */
+    /**
+     * Admins see every account; managers see the active employees on their team; employees see their manager
+     * and the active employees who share that manager, themselves included.
+     */
     public List<User> findAll(boolean archived, User actor) {
         if (actor.role() == Role.ADMIN) {
             return users.findAll(archived);
@@ -47,21 +51,32 @@ public class UserService {
             throw new ForbiddenException("Access denied");
         }
         return users.findAll(false).stream()
-                .filter(user -> actor.id().equals(user.managerId()))
+                .filter(user -> isOnTeamOf(user, actor))
                 .map(User::withoutSalary)
                 .toList();
     }
 
-    /** Admins can look up any account, archived or not; managers only active employees on their team. */
+    /** Admins can look up any account, archived or not; others only the active people on their team. */
     public User require(String id, User actor) {
         User user = require(id);
         if (actor.role() == Role.ADMIN) {
             return user;
         }
-        if (user.archived() || !actor.id().equals(user.managerId())) {
+        if (user.archived() || !isOnTeamOf(user, actor)) {
             throw new ForbiddenException("Access denied");
         }
         return user.withoutSalary();
+    }
+
+    /** Whether a manager or employee may see this active user as part of their team. */
+    private static boolean isOnTeamOf(User user, User viewer) {
+        return switch (viewer.role()) {
+            case ADMIN -> true;
+            case MANAGER -> viewer.id().equals(user.managerId());
+            case EMPLOYEE -> user.id().equals(viewer.id())
+                    || (viewer.managerId() != null
+                        && (user.id().equals(viewer.managerId()) || viewer.managerId().equals(user.managerId())));
+        };
     }
 
     private User require(String id) {

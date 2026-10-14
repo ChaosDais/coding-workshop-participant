@@ -20,11 +20,15 @@ import com.acme.repos.PostgresDatabase;
 import com.acme.repos.PostgresProjectStore;
 import com.acme.repos.PostgresRefreshTokenStore;
 import com.acme.repos.PostgresSettingsStore;
+import com.acme.repos.PostgresTimeEntryStore;
 import com.acme.repos.PostgresUserStore;
 import com.acme.repos.ProjectStore;
 import com.acme.repos.RefreshTokenStore;
 import com.acme.repos.SettingsStore;
+import com.acme.repos.TimeEntryStore;
 import com.acme.repos.UserStore;
+import com.acme.timelog.TimeController;
+import com.acme.timelog.TimeService;
 import com.acme.users.UserController;
 import com.acme.users.UserService;
 import org.springframework.context.annotation.Bean;
@@ -69,13 +73,23 @@ public class AppConfig {
     }
 
     @Bean
+    public TimeEntryStore timeEntryStore(PostgresDatabase database) {
+        return new PostgresTimeEntryStore(database);
+    }
+
+    @Bean
+    public Clock clock() {
+        return Clock.systemUTC();
+    }
+
+    @Bean
     public PasswordHasher passwordHasher() {
         return new PasswordHasher(BCRYPT_STRENGTH);
     }
 
     @Bean
-    public TokenService tokenService(SettingsStore settingsStore, RefreshTokenStore refreshTokenStore) {
-        return new TokenService(settingsStore, refreshTokenStore, Clock.systemUTC());
+    public TokenService tokenService(SettingsStore settingsStore, RefreshTokenStore refreshTokenStore, Clock clock) {
+        return new TokenService(settingsStore, refreshTokenStore, clock);
     }
 
     @Bean
@@ -101,8 +115,15 @@ public class AppConfig {
     }
 
     @Bean
-    public ProjectService projectService(ProjectStore projectStore, UserStore userStore, AuditService auditService) {
-        return new ProjectService(projectStore, userStore, auditService);
+    public ProjectService projectService(ProjectStore projectStore, UserStore userStore,
+                                         TimeEntryStore timeEntryStore, AuditService auditService) {
+        return new ProjectService(projectStore, userStore, timeEntryStore, auditService);
+    }
+
+    @Bean
+    public TimeService timeService(TimeEntryStore timeEntryStore, ProjectStore projectStore, UserStore userStore,
+                                   AuditService auditService, Clock clock) {
+        return new TimeService(timeEntryStore, projectStore, userStore, auditService, clock);
     }
 
     /**
@@ -111,7 +132,7 @@ public class AppConfig {
      */
     @Bean
     public Router router(Authenticator authenticator, AuthService authService, UserService userService,
-                         ProjectService projectService, AuditService auditService) {
+                         ProjectService projectService, TimeService timeService, AuditService auditService) {
         Router router = new Router(authenticator);
         List<Controller> controllers = List.of(
                 new StatusController(),
@@ -119,6 +140,7 @@ public class AppConfig {
                 new UserController(userService),
                 new ProjectController(projectService),
                 new MilestoneController(projectService),
+                new TimeController(timeService),
                 new AuditController(auditService));
         controllers.forEach(controller -> controller.register(router));
         return router;
