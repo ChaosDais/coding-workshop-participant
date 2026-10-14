@@ -217,6 +217,31 @@ class HandlerTest {
         assertEquals("Database error", error(response));
     }
 
+    @Test
+    void unexpectedErrorsBecomeServerErrorsInsteadOfFailingTheInvocation() {
+        app = new TestApp(new InMemoryProjectRepository() {
+            @Override
+            public List<com.acme.models.Project> findAll(boolean archived) {
+                throw new IllegalStateException("bug");
+            }
+        });
+        token = app.setUpAdmin();
+
+        Map<String, Object> response = send("GET", "/projects", null);
+        assertEquals(500, status(response));
+        assertEquals("Internal error", error(response));
+    }
+
+    @Test
+    void aBodyThatIsNotBase64IsRejected() {
+        Map<String, Object> event = new HashMap<>();
+        event.put("rawPath", "/projects");
+        event.put("requestContext", Map.of("http", Map.of("method", "POST")));
+        event.put("body", "not base64!");
+        event.put("isBase64Encoded", true);
+        assertEquals("Request body is not valid base64", error(app.handler.handleRequest(event, null)));
+    }
+
     private static String withId(String json, String id) {
         return json.replaceFirst("\\{", "{\"id\": \"" + id + "\", ");
     }
