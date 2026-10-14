@@ -5,6 +5,7 @@ import org.postgresql.Driver;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Properties;
 
@@ -122,6 +123,53 @@ public class PostgresDatabase {
             END $$""",
     };
 
+    /**
+     * How long to keep trying to connect. Aurora Serverless pauses after a few idle minutes and takes about 15
+     * seconds to resume; until then connection attempts time out. 22 seconds of retrying plus a Lambda cold start
+     * stays inside CloudFront's 30-second origin timeout.
+     */
+    static final Duration RESUME_WINDOW = Duration.ofSeconds(22);
+    private static final long RETRY_PAUSE_MILLIS = 1000;
+    /** SQLSTATE class 08: the connection could not be made or was lost; anything else will not fix itself. */
+    private static final String CONNECTION_EXCEPTION_CLASS = "08";
+
+    /** One connection attempt. */
+    @FunctionalInterface
+    interface ConnectionAttempt {
+        Connection connect() throws SQLException;
+    }
+
+    /** Waits between attempts; replaced in tests. */
+    @FunctionalInterface
+    interface Pause {
+        void sleep(long millis) throws InterruptedException;
+    }
+
+    /**
+     * Retries a failed connection while the error says the server could not be reached and the window has not
+     * passed, so a paused database gets time to resume. Other errors, such as a wrong password, fail at once.
+     */
+    static Connection retryWhileResuming(ConnectionAttempt attempt, Duration window, Pause pause)
+            throws SQLException {
+        long deadline = System.nanoTime() + window.toNanos();
+        while (true) {
+            try {
+                return attempt.connect();
+            } catch (SQLException e) {
+                boolean unreachable = e.getSQLState() != null && e.getSQLState().startsWith(CONNECTION_EXCEPTION_CLASS);
+                if (!unreachable || System.nanoTime() + RETRY_PAUSE_MILLIS * 1_000_000 > deadline) {
+                    throw e;
+                }
+                try {
+                    pause.sleep(RETRY_PAUSE_MILLIS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+            }
+        }
+    }
+
     /** Work done on the connection inside one transaction. */
     @FunctionalInterface
     public interface SqlWork<T> {
@@ -181,7 +229,8 @@ public class PostgresDatabase {
     private Connection connection() throws SQLException {
         if (connection == null || !connection.isValid(2)) {
             // The shaded jar drops the service files DriverManager relies on, so the driver is called directly.
-            connection = new Driver().connect(url, properties);
+            connection = retryWhileResuming(() -> new Driver().connect(url, properties), RESUME_WINDOW,
+                    Thread::sleep);
             try (Statement statement = connection.createStatement()) {
                 for (String table : SCHEMA) {
                     statement.execute(table);
