@@ -21,9 +21,10 @@ import java.util.Optional;
  * Rows are never deleted; archived ones have archived_at set and are left out of the active views.
  */
 public class PostgresProjectStore implements ProjectStore {
-    private static final String PROJECT_COLUMNS = "id, name, start_date, end_date, progress_time, manager, budget, status";
+    private static final String PROJECT_COLUMNS =
+            "id, name, start_date, end_date, progress_time, manager, budget, status, description";
     private static final String MILESTONE_COLUMNS =
-            "project_id, id, name, start_date, end_date, progress_time, assigned_employees, status";
+            "project_id, id, name, start_date, end_date, progress_time, assigned_employees, status, description";
 
     private final PostgresDatabase database;
 
@@ -35,7 +36,7 @@ public class PostgresProjectStore implements ProjectStore {
     public void insert(Project project) {
         database.run(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
-                    "INSERT INTO projects (" + PROJECT_COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) {
+                    "INSERT INTO projects (" + PROJECT_COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
                 statement.setString(1, project.id());
                 statement.setString(2, project.name());
                 statement.setObject(3, project.startDate());
@@ -44,6 +45,7 @@ public class PostgresProjectStore implements ProjectStore {
                 statement.setString(6, project.manager());
                 statement.setBigDecimal(7, project.budget());
                 statement.setString(8, project.status().name());
+                statement.setString(9, project.description());
                 statement.executeUpdate();
             }
             saveMilestones(connection, project);
@@ -101,7 +103,7 @@ public class PostgresProjectStore implements ProjectStore {
         return database.run(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
                     "UPDATE projects SET name = ?, start_date = ?, end_date = ?, progress_time = ?, manager = ?,"
-                            + " budget = ?, status = ? WHERE id = ? AND archived_at IS NULL")) {
+                            + " budget = ?, status = ?, description = ? WHERE id = ? AND archived_at IS NULL")) {
                 statement.setString(1, project.name());
                 statement.setObject(2, project.startDate());
                 statement.setObject(3, project.endDate());
@@ -109,7 +111,8 @@ public class PostgresProjectStore implements ProjectStore {
                 statement.setString(5, project.manager());
                 statement.setBigDecimal(6, project.budget());
                 statement.setString(7, project.status().name());
-                statement.setString(8, project.id());
+                statement.setString(8, project.description());
+                statement.setString(9, project.id());
                 if (statement.executeUpdate() == 0) {
                     return false;
                 }
@@ -152,8 +155,10 @@ public class PostgresProjectStore implements ProjectStore {
     /** Inserts or updates the project's active milestones, in list order. */
     private static void saveMilestones(Connection connection, Project project) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-                "INSERT INTO milestones (" + MILESTONE_COLUMNS + ", sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO milestones (" + MILESTONE_COLUMNS + ", sort_order)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                         + " ON CONFLICT (project_id, id) DO UPDATE SET name = EXCLUDED.name,"
+                        + " description = EXCLUDED.description,"
                         + " start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date,"
                         + " progress_time = EXCLUDED.progress_time, assigned_employees = EXCLUDED.assigned_employees,"
                         + " status = EXCLUDED.status, sort_order = EXCLUDED.sort_order"
@@ -169,7 +174,8 @@ public class PostgresProjectStore implements ProjectStore {
                 statement.setDouble(6, milestone.progressTime());
                 statement.setArray(7, connection.createArrayOf("text", milestone.assignedEmployees().toArray()));
                 statement.setString(8, milestone.status().name());
-                statement.setInt(9, sortOrder++);
+                statement.setString(9, milestone.description());
+                statement.setInt(10, sortOrder++);
                 statement.addBatch();
             }
             int[] counts = statement.executeBatch();
@@ -198,6 +204,7 @@ public class PostgresProjectStore implements ProjectStore {
                     byProject.computeIfAbsent(row.getString("project_id"), id -> new ArrayList<>()).add(new Milestone(
                             row.getString("id"),
                             row.getString("name"),
+                            row.getString("description"),
                             row.getObject("start_date", LocalDate.class),
                             row.getObject("end_date", LocalDate.class),
                             row.getDouble("progress_time"),
@@ -213,6 +220,7 @@ public class PostgresProjectStore implements ProjectStore {
         return new Project(
                 row.getString("id"),
                 row.getString("name"),
+                row.getString("description"),
                 row.getObject("start_date", LocalDate.class),
                 row.getObject("end_date", LocalDate.class),
                 row.getDouble("progress_time"),

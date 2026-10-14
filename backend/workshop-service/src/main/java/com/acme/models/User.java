@@ -31,6 +31,11 @@ public record User(String id, String email, String name, Role role, String manag
         return new User(id, email, name, role, newManagerId, jobType, salary, archived);
     }
 
+    /** The same account without its salary, for viewers who may not see pay. */
+    public User withoutSalary() {
+        return new User(id, email, name, role, managerId, jobType, null, archived);
+    }
+
     public User withArchived(boolean newArchived) {
         return new User(id, email, name, role, managerId, jobType, salary, newArchived);
     }

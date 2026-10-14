@@ -15,6 +15,7 @@ const admin = { email: 'admin@example.com', password: 'change-me-now' };
 
 const sampleProject = {
   name: 'Apollo',
+  description: 'Crewed lunar landing programme',
   startDate: '2026-01-01',
   endDate: '2026-12-31',
   progressTime: 12.5,
@@ -25,6 +26,7 @@ const sampleProject = {
 
 const sampleMilestone = {
   name: 'Design',
+  description: 'Wireframes and visual design for the main flows',
   startDate: '2026-01-01',
   endDate: '2026-02-01',
   progressTime: 4,
@@ -62,6 +64,15 @@ export const PRESETS = [
     method: 'POST',
     path: '/auth/login',
     body: json(admin),
+    capture: signInCapture,
+  },
+  {
+    id: 'login-manager',
+    group: 'Sign-in',
+    label: 'Sign in as manager',
+    method: 'POST',
+    path: '/auth/login',
+    body: json({ email: 'manager@example.com', password: 'manager-pass' }),
     capture: signInCapture,
   },
   {
@@ -228,6 +239,14 @@ export const PRESETS = [
     method: 'PUT',
     path: '/projects/{projectId}',
     body: json({ ...sampleProject, name: 'Apollo (updated)', status: 'IN_PROGRESS' }),
+  },
+  {
+    id: 'update-project-description',
+    group: 'Projects',
+    label: 'Change description (admins only)',
+    method: 'PUT',
+    path: '/projects/{projectId}',
+    body: json({ ...sampleProject, description: 'Crewed lunar landing, phase two' }),
   },
   {
     id: 'archive-project', group: 'Projects', label: 'Archive project', method: 'DELETE', path: '/projects/{projectId}',

@@ -17,23 +17,23 @@ class ProjectTest {
 
     @Test
     void invalidModelsAreRejected() {
-        Milestone milestone = new Milestone("m1", "Design", START, END, 4.5, List.of("bob"), null);
+        Milestone milestone = new Milestone("m1", "Design", null, START, END, 4.5, List.of("bob"), null);
 
-        assertThrows(IllegalArgumentException.class, () -> new Project("p", " ", START, END,
+        assertThrows(IllegalArgumentException.class, () -> new Project("p", " ", null, START, END,
                 0, "alice", BigDecimal.ONE, null, null));
-        assertThrows(IllegalArgumentException.class, () -> new Project("p", "n", END, START,
+        assertThrows(IllegalArgumentException.class, () -> new Project("p", "n", null, END, START,
                 0, "alice", BigDecimal.ONE, null, null));
-        assertThrows(IllegalArgumentException.class, () -> new Project("p", "n", START, END,
+        assertThrows(IllegalArgumentException.class, () -> new Project("p", "n", null, START, END,
                 0, "alice", new BigDecimal("-1"), null, null));
-        assertThrows(IllegalArgumentException.class, () -> new Project("p", "n", START, END,
+        assertThrows(IllegalArgumentException.class, () -> new Project("p", "n", null, START, END,
                 -1, "alice", BigDecimal.ONE, null, null));
-        assertThrows(IllegalArgumentException.class, () -> new Project("p", "n", START, END,
+        assertThrows(IllegalArgumentException.class, () -> new Project("p", "n", null, START, END,
                 0, "alice", BigDecimal.ONE, null, List.of(milestone, milestone)));
     }
 
     @Test
     void defaultsAreApplied() {
-        Project project = new Project(null, "n", START, START, 0, "m", BigDecimal.ZERO, null, null);
+        Project project = new Project(null, "n", null, START, START, 0, "m", BigDecimal.ZERO, null, null);
 
         assertFalse(project.id().isBlank());
         assertEquals(CompletionStatus.TODO, project.status());

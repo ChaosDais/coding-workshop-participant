@@ -123,14 +123,14 @@ class AuthTest {
         app.signIn(ADMIN_EMAIL, "new-password-1");
     }
 
-    /** Until manager and employee permissions are defined, they can only use their own account endpoints. */
+    /** Until employee permissions are defined, employees can only use their own account endpoints. */
     @Test
-    void managersAndEmployeesAreDeniedEverythingButTheirOwnAccount() {
+    void employeesAreDeniedEverythingButTheirOwnAccount() {
         String adminToken = app.setUpAdmin();
         String managerId = app.createUser(adminToken, "manager@example.com", "MANAGER", null);
         app.createUser(adminToken, "employee@example.com", "EMPLOYEE", managerId);
 
-        List<String[]> adminOnly = List.of(
+        List<String[]> denied = List.of(
                 new String[] {"GET", "/projects"}, new String[] {"GET", "/projects?archived=true"},
                 new String[] {"POST", "/projects"}, new String[] {"GET", "/projects/p"},
                 new String[] {"PUT", "/projects/p"}, new String[] {"DELETE", "/projects/p"},
@@ -141,16 +141,14 @@ class AuthTest {
                 new String[] {"POST", "/users/u/restore"}, new String[] {"PUT", "/users/u/manager"},
                 new String[] {"PUT", "/users/u/password"});
 
-        for (String email : List.of("manager@example.com", "employee@example.com")) {
-            String token = app.signIn(email, PASSWORD).get("accessToken").getAsString();
-            for (String[] route : adminOnly) {
-                Map<String, Object> response = app.send(route[0], route[1], "{}", token);
-                assertEquals(403, status(response), email + " " + route[0] + " " + route[1]);
-                assertEquals("Access denied", error(response));
-            }
-            assertEquals(email, body(app.send("GET", "/auth/me", null, token)).getAsJsonObject()
-                    .get("email").getAsString());
+        String token = app.signIn("employee@example.com", PASSWORD).get("accessToken").getAsString();
+        for (String[] route : denied) {
+            Map<String, Object> response = app.send(route[0], route[1], "{}", token);
+            assertEquals(403, status(response), route[0] + " " + route[1]);
+            assertEquals("Access denied", error(response));
         }
+        assertEquals("employee@example.com", body(app.send("GET", "/auth/me", null, token)).getAsJsonObject()
+                .get("email").getAsString());
     }
 
     private static String refresh(String token) {

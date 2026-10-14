@@ -77,6 +77,8 @@ public class PostgresDatabase {
             // Upgrades tables created by earlier versions; rows are archived, never deleted.
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS job_type TEXT",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS salary NUMERIC",
+            "ALTER TABLE milestones ADD COLUMN IF NOT EXISTS description TEXT",
+            "ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT",
             "ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ",
             "ALTER TABLE milestones ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ",
             // Older tables deleted milestones along with their project; now deleting a referenced project fails.

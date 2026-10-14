@@ -4,6 +4,7 @@ import com.acme.audit.AuditService;
 import com.acme.auth.PasswordHasher;
 import com.acme.auth.TokenService;
 import com.acme.errors.ConflictException;
+import com.acme.errors.ForbiddenException;
 import com.acme.errors.NotFoundException;
 import com.acme.models.Role;
 import com.acme.models.User;
@@ -16,7 +17,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Account management. Users are archived, never deleted, and the rules keep the data consistent:
+ * Account management. Admins see and manage every account; managers can only look up the active employees on
+ * their own team, without salaries. Users are archived, never deleted, and the rules keep the data consistent:
  * at least one active admin always remains, and a manager with active employees or projects cannot be archived
  * or given another role until those are moved to someone else.
  */
@@ -36,12 +38,33 @@ public class UserService {
         this.auditService = auditService;
     }
 
-    public List<User> findAll(boolean archived) {
-        return users.findAll(archived);
+    /** Admins see every account; managers see the active employees on their team. */
+    public List<User> findAll(boolean archived, User actor) {
+        if (actor.role() == Role.ADMIN) {
+            return users.findAll(archived);
+        }
+        if (archived) {
+            throw new ForbiddenException("Access denied");
+        }
+        return users.findAll(false).stream()
+                .filter(user -> actor.id().equals(user.managerId()))
+                .map(User::withoutSalary)
+                .toList();
     }
 
-    /** The user, archived or not. */
-    public User require(String id) {
+    /** Admins can look up any account, archived or not; managers only active employees on their team. */
+    public User require(String id, User actor) {
+        User user = require(id);
+        if (actor.role() == Role.ADMIN) {
+            return user;
+        }
+        if (user.archived() || !actor.id().equals(user.managerId())) {
+            throw new ForbiddenException("Access denied");
+        }
+        return user.withoutSalary();
+    }
+
+    private User require(String id) {
         return users.findById(id).orElseThrow(() -> new NotFoundException("User " + id + " not found"));
     }
 

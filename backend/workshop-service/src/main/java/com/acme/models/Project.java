@@ -7,12 +7,17 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-/** A blank id is replaced with a generated one; progressTime is in hours. */
-public record Project(String id, String name, LocalDate startDate, LocalDate endDate, double progressTime,
-                      String manager, BigDecimal budget, CompletionStatus status, List<Milestone> milestones) {
+/**
+ * A blank id is replaced with a generated one; progressTime is in hours; the description is optional free text.
+ * manager holds a user id.
+ */
+public record Project(String id, String name, String description, LocalDate startDate, LocalDate endDate,
+                      double progressTime, String manager, BigDecimal budget, CompletionStatus status,
+                      List<Milestone> milestones) {
     public Project {
         id = id == null || id.isBlank() ? UUID.randomUUID().toString() : id.trim();
         name = Checks.text(name, "name");
+        description = description == null || description.isBlank() ? null : description.trim();
         Checks.dateRange(startDate, endDate);
         Checks.nonNegative(progressTime, "progressTime");
         manager = Checks.text(manager, "manager");

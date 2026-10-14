@@ -56,13 +56,13 @@ class PostgresStoresTest {
                         url + (url.contains("?") ? "&" : "?") + "currentSchema=" + schema, null, null);
                 ProjectStore projects = new PostgresProjectStore(database);
 
-                Milestone design = new Milestone("m1", "Design", LocalDate.of(2026, 1, 1), LocalDate.of(2026, 2, 1),
+                Milestone design = new Milestone("m1", "Design", "Wireframes and visual design", LocalDate.of(2026, 1, 1), LocalDate.of(2026, 2, 1),
                         4.5, List.of("bob", "carol"), CompletionStatus.IN_PROGRESS);
-                Milestone build = new Milestone("a0", "Build", LocalDate.of(2026, 2, 2), LocalDate.of(2026, 3, 1), 0,
+                Milestone build = new Milestone("a0", "Build", null, LocalDate.of(2026, 2, 2), LocalDate.of(2026, 3, 1), 0,
                         List.of(), CompletionStatus.TODO);
-                Project project = new Project("p1", "Apollo", LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
+                Project project = new Project("p1", "Apollo", "Crewed lunar landing", LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
                         12.5, "alice", new BigDecimal("50000.75"), CompletionStatus.TODO, List.of(design, build));
-                Project earlier = new Project("p2", "Mercury", LocalDate.of(2025, 6, 1), LocalDate.of(2025, 9, 1),
+                Project earlier = new Project("p2", "Mercury", null, LocalDate.of(2025, 6, 1), LocalDate.of(2025, 9, 1),
                         0, "dave", BigDecimal.ZERO, CompletionStatus.COMPLETE, List.of());
 
                 projects.insert(project);
@@ -71,16 +71,16 @@ class PostgresStoresTest {
                 assertEquals(project, projects.findById("p1").orElseThrow());
                 assertEquals(List.of(earlier, project), projects.findAll(false));
 
-                Project updated = new Project("p1", "Gemini", project.startDate(), project.endDate(), 20, "erin",
+                Project updated = new Project("p1", "Gemini", null, project.startDate(), project.endDate(), 20, "erin",
                         new BigDecimal("1.00"), CompletionStatus.COMPLETE, List.of(build));
                 assertTrue(projects.replace(updated));
                 assertEquals(updated, projects.findById("p1").orElseThrow());
-                assertFalse(projects.replace(new Project("missing", "n", project.startDate(), project.endDate(), 0,
+                assertFalse(projects.replace(new Project("missing", "n", null, project.startDate(), project.endDate(), 0,
                         "m", BigDecimal.ONE, null, null)));
 
                 // The milestone left out of the update is archived, not deleted, and its id cannot be reused.
                 assertEquals(1, count(admin, schema, "milestones WHERE id = 'm1' AND archived_at IS NOT NULL"));
-                Project reusingId = new Project("p1", "Gemini", project.startDate(), project.endDate(), 20, "erin",
+                Project reusingId = new Project("p1", "Gemini", null, project.startDate(), project.endDate(), 20, "erin",
                         new BigDecimal("1.00"), CompletionStatus.COMPLETE, List.of(build, design));
                 assertThrows(ConflictException.class, () -> projects.replace(reusingId));
                 assertEquals(updated, projects.findById("p1").orElseThrow());

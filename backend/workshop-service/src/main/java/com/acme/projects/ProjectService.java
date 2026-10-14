@@ -2,6 +2,7 @@ package com.acme.projects;
 
 import com.acme.audit.AuditService;
 import com.acme.errors.ConflictException;
+import com.acme.errors.ForbiddenException;
 import com.acme.errors.NotFoundException;
 import com.acme.models.Milestone;
 import com.acme.models.Project;
@@ -18,8 +19,16 @@ import java.util.Set;
 
 /**
  * Business rules for projects and their milestones; every change is recorded as an audit entry with the user
- * who made it. A project's manager must be an active manager and assigned employees must be active employees;
- * references are checked when they change, so existing ones stay valid if a user is later archived.
+ * who made it.
+ * <ul>
+ *   <li>Admins can see and change every project, including archived ones.</li>
+ *   <li>Managers can see and change only the active projects they manage, but cannot hand a project to another
+ *       manager or change its description.</li>
+ * </ul>
+ * Whoever makes the change, only employees on the project manager's team can be newly assigned to its milestones;
+ * an employee moves to another team by an admin changing their manager.
+ * A project's manager must be an active manager and assigned employees must be active employees; references are
+ * checked when they change, so existing ones stay valid if a user is later archived or moved to another team.
  */
 public class ProjectService {
     private final ProjectStore projects;
@@ -32,12 +41,23 @@ public class ProjectService {
         this.auditService = auditService;
     }
 
-    public List<Project> findAll(boolean archived) {
-        return projects.findAll(archived);
+    /** Admins see every project; managers see the active projects they manage. */
+    public List<Project> findAll(boolean archived, User actor) {
+        if (actor.role() == Role.ADMIN) {
+            return projects.findAll(archived);
+        }
+        if (archived) {
+            throw new ForbiddenException("Access denied");
+        }
+        return projects.findAll(false).stream().filter(project -> actor.id().equals(project.manager())).toList();
     }
 
-    public Project require(String id) {
-        return projects.findById(id).orElseThrow(() -> new NotFoundException("Project " + id + " not found"));
+    public Project require(String id, User actor) {
+        Project project = projects.findById(id).orElseThrow(() -> new NotFoundException("Project " + id + " not found"));
+        if (actor.role() != Role.ADMIN && !actor.id().equals(project.manager())) {
+            throw new ForbiddenException("Access denied");
+        }
+        return project;
     }
 
     public Project create(Project project, User actor) {
@@ -46,7 +66,7 @@ public class ProjectService {
             throw new ConflictException("A project with id " + project.id() + " already exists");
         }
         requireActiveUser(project.manager(), Role.MANAGER, "manager");
-        project.milestones().forEach(milestone -> requireEmployees(milestone, Set.of()));
+        project.milestones().forEach(milestone -> requireEmployees(milestone, Set.of(), project.manager()));
         projects.insert(project);
         audit("project_created", project, null, actor);
         return project;
@@ -54,14 +74,28 @@ public class ProjectService {
 
     /** Applies the changes to the project; its milestones are kept unless {@code replaceMilestones} is set. */
     public Project update(String id, Project changes, boolean replaceMilestones, User actor) {
-        Project existing = require(id);
+        Project existing = require(id, actor);
         if (!changes.manager().equals(existing.manager())) {
+            if (actor.role() != Role.ADMIN) {
+                throw new ForbiddenException("Only admins can change a project's manager");
+            }
             requireActiveUser(changes.manager(), Role.MANAGER, "manager");
         }
-        if (replaceMilestones) {
-            changes.milestones().forEach(milestone -> requireEmployees(milestone, assignedBefore(existing, milestone)));
+        String description = changes.description();
+        if (actor.role() != Role.ADMIN) {
+            // Managers may leave the description out, which keeps it, but only admins can change it.
+            if (description == null) {
+                description = existing.description();
+            } else if (!description.equals(existing.description())) {
+                throw new ForbiddenException("Only admins can change a project's description");
+            }
         }
-        Project updated = new Project(id, changes.name(), changes.startDate(), changes.endDate(),
+        if (replaceMilestones) {
+            // Checked against the manager the project has after this update.
+            changes.milestones().forEach(milestone ->
+                    requireEmployees(milestone, assignedBefore(existing, milestone), changes.manager()));
+        }
+        Project updated = new Project(id, changes.name(), description, changes.startDate(), changes.endDate(),
                 changes.progressTime(), changes.manager(), changes.budget(), changes.status(),
                 replaceMilestones ? changes.milestones() : existing.milestones());
         save(updated);
@@ -71,7 +105,7 @@ public class ProjectService {
 
     /** Hides the project from the active views; it stays stored and can be restored. */
     public void archive(String id, User actor) {
-        Project project = require(id);
+        Project project = require(id, actor);
         if (!projects.archive(id)) {
             // Archived by another request between the lookup and the write.
             throw new NotFoundException("Project " + id + " not found");
@@ -83,17 +117,17 @@ public class ProjectService {
         if (!projects.restore(id)) {
             throw new NotFoundException("Archived project " + id + " not found");
         }
-        Project project = require(id);
+        Project project = require(id, actor);
         audit("project_restored", project, null, actor);
         return project;
     }
 
     public Milestone addMilestone(String projectId, Milestone milestone, User actor) {
-        Project project = require(projectId);
+        Project project = require(projectId, actor);
         if (project.milestones().stream().anyMatch(existing -> existing.id().equals(milestone.id()))) {
             throw new ConflictException("A milestone with id " + milestone.id() + " already exists");
         }
-        requireEmployees(milestone, Set.of());
+        requireEmployees(milestone, Set.of(), project.manager());
         List<Milestone> milestones = new ArrayList<>(project.milestones());
         milestones.add(milestone);
         save(withMilestones(project, milestones));
@@ -102,11 +136,11 @@ public class ProjectService {
     }
 
     public Milestone updateMilestone(String projectId, String milestoneId, Milestone changes, User actor) {
-        Project project = require(projectId);
+        Project project = require(projectId, actor);
         int index = requireMilestoneIndex(project, milestoneId);
-        Milestone updated = new Milestone(milestoneId, changes.name(), changes.startDate(), changes.endDate(),
-                changes.progressTime(), changes.assignedEmployees(), changes.status());
-        requireEmployees(updated, Set.copyOf(project.milestones().get(index).assignedEmployees()));
+        Milestone updated = new Milestone(milestoneId, changes.name(), changes.description(), changes.startDate(),
+                changes.endDate(), changes.progressTime(), changes.assignedEmployees(), changes.status());
+        requireEmployees(updated, Set.copyOf(project.milestones().get(index).assignedEmployees()), project.manager());
         List<Milestone> milestones = new ArrayList<>(project.milestones());
         milestones.set(index, updated);
         save(withMilestones(project, milestones));
@@ -116,7 +150,7 @@ public class ProjectService {
 
     /** Removes the milestone from the project; the store keeps it as archived. */
     public void archiveMilestone(String projectId, String milestoneId, User actor) {
-        Project project = require(projectId);
+        Project project = require(projectId, actor);
         List<Milestone> milestones = new ArrayList<>(project.milestones());
         milestones.remove(requireMilestoneIndex(project, milestoneId));
         save(withMilestones(project, milestones));
@@ -140,25 +174,33 @@ public class ProjectService {
                 .orElse(Set.of());
     }
 
-    /** Newly assigned employees must be active employees; ones already assigned are kept as they are. */
-    private void requireEmployees(Milestone milestone, Set<String> alreadyAssigned) {
-        milestone.assignedEmployees().stream()
-                .filter(employeeId -> !alreadyAssigned.contains(employeeId))
-                .forEach(employeeId -> requireActiveUser(employeeId, Role.EMPLOYEE, "assignedEmployees"));
-    }
-
-    private void requireActiveUser(String userId, Role role, String field) {
-        boolean valid = users.findById(userId)
-                .filter(user -> !user.archived() && user.role() == role)
-                .isPresent();
-        if (!valid) {
-            throw new IllegalArgumentException(field + " must reference an active "
-                    + role.name().toLowerCase() + " by user id: " + userId);
+    /**
+     * Newly assigned employees must be active employees on the project manager's team; employees already assigned
+     * are kept as they are, even if they have since moved to another team.
+     */
+    private void requireEmployees(Milestone milestone, Set<String> alreadyAssigned, String projectManagerId) {
+        for (String employeeId : milestone.assignedEmployees()) {
+            if (alreadyAssigned.contains(employeeId)) {
+                continue;
+            }
+            User employee = requireActiveUser(employeeId, Role.EMPLOYEE, "assignedEmployees");
+            if (!projectManagerId.equals(employee.managerId())) {
+                throw new IllegalArgumentException("assignedEmployees must be on the project manager's team: "
+                        + employeeId);
+            }
         }
     }
 
+    private User requireActiveUser(String userId, Role role, String field) {
+        return users.findById(userId)
+                .filter(user -> !user.archived() && user.role() == role)
+                .orElseThrow(() -> new IllegalArgumentException(field + " must reference an active "
+                        + role.name().toLowerCase() + " by user id: " + userId));
+    }
+
     private static Project withMilestones(Project project, List<Milestone> milestones) {
-        return new Project(project.id(), project.name(), project.startDate(), project.endDate(),
+        return new Project(project.id(), project.name(), project.description(), project.startDate(),
+                project.endDate(),
                 project.progressTime(), project.manager(), project.budget(), project.status(), milestones);
     }
 

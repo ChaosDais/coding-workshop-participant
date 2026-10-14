@@ -18,6 +18,8 @@ import java.time.format.DateTimeParseException;
 /** JSON reading and writing for requests and responses; dates use YYYY-MM-DD. */
 public final class Json {
     private static final Gson GSON = new GsonBuilder()
+            // Responses are JSON, not HTML, so characters like ' stay readable instead of becoming \u0027.
+            .disableHtmlEscaping()
             .registerTypeAdapter(LocalDate.class, new LocalDateAdapter().nullSafe())
             .registerTypeAdapter(CompletionStatus.class, (JsonDeserializer<CompletionStatus>) (json, type, context) ->
                     parseStatus(json.getAsString()))
