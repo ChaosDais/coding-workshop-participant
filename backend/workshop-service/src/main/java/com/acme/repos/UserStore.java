@@ -27,7 +27,7 @@ public interface UserStore {
     /** Active or archived users, ordered by name. */
     List<User> findAll(boolean archived);
 
-    /** Updates email, name, role and manager. */
+    /** Updates email, name, role, manager, job type and salary. */
     void update(User user);
 
     void setPasswordHash(String id, String passwordHash);

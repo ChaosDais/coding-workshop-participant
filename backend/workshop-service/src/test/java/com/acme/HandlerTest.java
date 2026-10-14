@@ -179,6 +179,8 @@ class HandlerTest {
         assertEquals("Request body must be a JSON object", error(send("POST", "/projects", "[]")));
         assertEquals("Request body has a field of the wrong type",
                 error(send("POST", "/projects", projectJson.replace("12.5", "{}"))));
+        assertEquals("Request body has a field of the wrong type",
+                error(send("POST", "/projects", projectJson.replace("50000.75", "\"lots\""))));
 
         assertEquals(404, status(send("PUT", "/projects/missing", projectJson)));
         assertEquals(404, status(send("POST", "/projects/missing/milestones", milestoneJson)));

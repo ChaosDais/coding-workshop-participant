@@ -49,6 +49,10 @@ public final class Json {
         try {
             return GSON.fromJson(json, type);
         } catch (RuntimeException e) {
+            // A number field holding text, e.g. "salary": "lots"; its parser message is not meant for clients.
+            if (e instanceof NumberFormatException || e.getCause() instanceof NumberFormatException) {
+                throw new ApiException(400, "Request body has a field of the wrong type");
+            }
             // Gson wraps exceptions thrown by the record constructors, so the validation message is in the cause.
             if (e.getCause() instanceof IllegalArgumentException cause) {
                 throw new ApiException(400, cause.getMessage());

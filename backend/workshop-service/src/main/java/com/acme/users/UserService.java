@@ -46,17 +46,19 @@ public class UserService {
     }
 
     public User create(User user, String password, User actor) {
-        User created = new User(user.id(), user.email(), user.name(), user.role(), user.managerId(), false);
+        User created = user.withArchived(false);
         requireActiveManagerIfSet(created.managerId());
         users.insert(created, passwords.hash(password));
         audit("user_created", created, actor, Map.of("role", created.role().name()));
         return created;
     }
 
-    /** Changes email, name, role and manager. */
+    /** Replaces email, name, role, manager, job type and salary. */
     public User update(String id, User changes, User actor) {
         User existing = requireActive(id);
-        User updated = new User(id, changes.email(), changes.name(), changes.role(), changes.managerId(), false);
+        // PUT replaces the account's details, so a jobType or salary left out of the body is cleared.
+        User updated = new User(id, changes.email(), changes.name(), changes.role(), changes.managerId(),
+                changes.jobType(), changes.salary(), false);
         if (existing.role() != updated.role()) {
             requireRoleCanChange(existing);
         }

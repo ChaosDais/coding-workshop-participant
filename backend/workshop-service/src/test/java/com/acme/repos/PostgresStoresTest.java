@@ -127,26 +127,32 @@ class PostgresStoresTest {
                         url + (url.contains("?") ? "&" : "?") + "currentSchema=" + schema, null, null);
                 UserStore users = new PostgresUserStore(database);
 
-                User boss = new User("u1", "Boss@Example.com", "Boss", Role.ADMIN, null, false);
-                User manager = new User("u2", "manager@example.com", "Manager", Role.MANAGER, null, false);
-                User employee = new User("u3", "employee@example.com", "Employee", Role.EMPLOYEE, "u2", false);
+                User boss = new User("u1", "Boss@Example.com", "Boss", Role.ADMIN, null, null, null, false);
+                User manager = new User("u2", "manager@example.com", "Manager", Role.MANAGER, null, "Team lead",
+                        new BigDecimal("95000.50"), false);
+                User employee = new User("u3", "employee@example.com", "Employee", Role.EMPLOYEE, "u2", "Developer",
+                        new BigDecimal("70000"), false);
                 assertTrue(users.insertIfEmpty(boss, "hash-1"));
                 assertFalse(users.insertIfEmpty(manager, "hash-2"));
                 users.insert(manager, "hash-2");
                 users.insert(employee, "hash-3");
                 assertThrows(ConflictException.class, () -> users.insert(
-                        new User("u4", "MANAGER@example.com", "Dup", Role.EMPLOYEE, null, false), "h"));
+                        new User("u4", "MANAGER@example.com", "Dup", Role.EMPLOYEE, null, null, null, false), "h"));
 
                 assertEquals(boss, users.findById("u1").orElseThrow());
+                assertEquals(manager, users.findById("u2").orElseThrow());
                 assertEquals("hash-1", users.findByEmail("boss@example.com").orElseThrow().passwordHash());
                 assertEquals(List.of(boss, employee, manager), users.findAll(false));
                 assertEquals(1, users.countActive(Role.ADMIN));
                 assertEquals(1, users.countActiveEmployeesOf("u2"));
 
-                users.update(employee.withManager(null));
+                User promoted = new User("u3", "employee@example.com", "Employee", Role.EMPLOYEE, null,
+                        "Senior developer", new BigDecimal("80000.00"), false);
+                users.update(promoted);
                 assertEquals(0, users.countActiveEmployeesOf("u2"));
+                assertEquals(promoted, users.findById("u3").orElseThrow());
                 assertThrows(ConflictException.class, () -> users.update(
-                        new User("u3", "boss@example.com", "Employee", Role.EMPLOYEE, null, false)));
+                        new User("u3", "boss@example.com", "Employee", Role.EMPLOYEE, null, null, null, false)));
                 users.setPasswordHash("u3", "hash-new");
                 assertEquals("hash-new", users.findByEmail("employee@example.com").orElseThrow().passwordHash());
 

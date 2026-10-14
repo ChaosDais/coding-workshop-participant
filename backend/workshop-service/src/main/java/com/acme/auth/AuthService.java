@@ -34,7 +34,7 @@ public class AuthService {
 
     /** Creates the first admin; refused once any user exists. */
     public User setUpFirstAdmin(String email, String name, String password) {
-        User admin = new User(null, email, name, Role.ADMIN, null, false);
+        User admin = new User(null, email, name, Role.ADMIN, null, null, null, false);
         if (!users.insertIfEmpty(admin, passwords.hash(password))) {
             throw new ConflictException("Setup is already complete; sign in as an admin to add users");
         }

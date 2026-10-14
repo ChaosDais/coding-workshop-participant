@@ -14,7 +14,10 @@ import java.util.Optional;
 
 /** Stores accounts in the "users" table; archived users keep their row with archived_at set. */
 public class PostgresUserStore implements UserStore {
-    private static final String COLUMNS = "id, email, name, role, manager_id, archived_at IS NOT NULL AS archived";
+    private static final String COLUMNS =
+            "id, email, name, role, manager_id, job_type, salary, archived_at IS NOT NULL AS archived";
+    private static final String INSERT = "INSERT INTO users (id, email, name, role, manager_id, job_type, salary,"
+            + " password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
     private static final String UNIQUE_VIOLATION = "23505";
 
     private final PostgresDatabase database;
@@ -26,9 +29,7 @@ public class PostgresUserStore implements UserStore {
     @Override
     public void insert(User user, String passwordHash) {
         database.run(connection -> {
-            insert(connection.prepareStatement(
-                    "INSERT INTO users (id, email, name, role, manager_id, password_hash) VALUES (?, ?, ?, ?, ?, ?)"),
-                    user, passwordHash);
+            insert(connection.prepareStatement(INSERT), user, passwordHash);
             return null;
         });
     }
@@ -46,9 +47,7 @@ public class PostgresUserStore implements UserStore {
                     return false;
                 }
             }
-            insert(connection.prepareStatement(
-                    "INSERT INTO users (id, email, name, role, manager_id, password_hash) VALUES (?, ?, ?, ?, ?, ?)"),
-                    user, passwordHash);
+            insert(connection.prepareStatement(INSERT), user, passwordHash);
             return true;
         });
     }
@@ -101,12 +100,15 @@ public class PostgresUserStore implements UserStore {
     public void update(User user) {
         database.run(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
-                    "UPDATE users SET email = ?, name = ?, role = ?, manager_id = ? WHERE id = ?")) {
+                    "UPDATE users SET email = ?, name = ?, role = ?, manager_id = ?, job_type = ?, salary = ?"
+                            + " WHERE id = ?")) {
                 statement.setString(1, user.email());
                 statement.setString(2, user.name());
                 statement.setString(3, user.role().name());
                 statement.setString(4, user.managerId());
-                statement.setString(5, user.id());
+                statement.setString(5, user.jobType());
+                statement.setBigDecimal(6, user.salary());
+                statement.setString(7, user.id());
                 statement.executeUpdate();
             } catch (SQLException e) {
                 throw duplicateEmailOr(e, user);
@@ -155,7 +157,9 @@ public class PostgresUserStore implements UserStore {
             statement.setString(3, user.name());
             statement.setString(4, user.role().name());
             statement.setString(5, user.managerId());
-            statement.setString(6, passwordHash);
+            statement.setString(6, user.jobType());
+            statement.setBigDecimal(7, user.salary());
+            statement.setString(8, passwordHash);
             statement.executeUpdate();
         } catch (SQLException e) {
             throw duplicateEmailOr(e, user);
@@ -194,6 +198,7 @@ public class PostgresUserStore implements UserStore {
 
     private static User toUser(ResultSet row) throws SQLException {
         return new User(row.getString("id"), row.getString("email"), row.getString("name"),
-                Role.valueOf(row.getString("role")), row.getString("manager_id"), row.getBoolean("archived"));
+                Role.valueOf(row.getString("role")), row.getString("manager_id"), row.getString("job_type"),
+                row.getBigDecimal("salary"), row.getBoolean("archived"));
     }
 }

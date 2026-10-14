@@ -55,6 +55,8 @@ public class PostgresDatabase {
                 name TEXT NOT NULL,
                 role TEXT NOT NULL,
                 manager_id TEXT REFERENCES users (id),
+                job_type TEXT,
+                salary NUMERIC,
                 password_hash TEXT NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 archived_at TIMESTAMPTZ
@@ -72,7 +74,9 @@ public class PostgresDatabase {
                 name TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             )""",
-            // Upgrades tables created before archiving existed; rows are archived, never deleted.
+            // Upgrades tables created by earlier versions; rows are archived, never deleted.
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS job_type TEXT",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS salary NUMERIC",
             "ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ",
             "ALTER TABLE milestones ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ",
             // Older tables deleted milestones along with their project; now deleting a referenced project fails.

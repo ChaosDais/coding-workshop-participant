@@ -58,7 +58,7 @@ public class InMemoryUserStore implements UserStore {
                     + " already exists");
         }
         Credentials stored = users.get(user.id());
-        users.put(user.id(), new Credentials(withArchived(user, stored.user().archived()), stored.passwordHash()));
+        users.put(user.id(), new Credentials(user.withArchived(stored.user().archived()), stored.passwordHash()));
     }
 
     @Override
@@ -91,11 +91,7 @@ public class InMemoryUserStore implements UserStore {
         if (stored == null || stored.user().archived() == archived) {
             return false;
         }
-        users.put(id, new Credentials(withArchived(stored.user(), archived), stored.passwordHash()));
+        users.put(id, new Credentials(stored.user().withArchived(archived), stored.passwordHash()));
         return true;
-    }
-
-    private static User withArchived(User user, boolean archived) {
-        return new User(user.id(), user.email(), user.name(), user.role(), user.managerId(), archived);
     }
 }

@@ -49,6 +49,37 @@ class UsersTest {
     }
 
     @Test
+    void usersHaveAnOptionalJobTypeAndSalary() {
+        Map<String, Object> created = send("POST", "/users", """
+                {"email": "dev@example.com", "name": "Dev", "role": "EMPLOYEE", "password": "%s",
+                 "jobType": "  Software Engineer ", "salary": 72000.50}""".formatted(PASSWORD));
+        assertEquals(201, status(created));
+        String id = body(created).getAsJsonObject().get("id").getAsString();
+        JsonObject stored = body(send("GET", "/users/" + id, null)).getAsJsonObject();
+        assertEquals("Software Engineer", stored.get("jobType").getAsString());
+        assertEquals(new java.math.BigDecimal("72000.50"), stored.get("salary").getAsBigDecimal());
+
+        String base = "{\"email\": \"x@example.com\", \"name\": \"X\", \"role\": \"EMPLOYEE\", \"password\": \""
+                + PASSWORD + "\"";
+        assertEquals("salary must be a non-negative number", error(send("POST", "/users", base + ", \"salary\": -1}")));
+        assertEquals("jobType is required", error(send("POST", "/users", base + ", \"jobType\": \" \"}")));
+        assertEquals("Request body has a field of the wrong type",
+                error(send("POST", "/users", base + ", \"salary\": \"lots\"}")));
+        // Both are optional: accounts without them are valid and simply omit the fields.
+        String plainId = body(send("POST", "/users", base + "}")).getAsJsonObject().get("id").getAsString();
+        assertFalse(body(send("GET", "/users/" + plainId, null)).getAsJsonObject().has("salary"));
+
+        // PUT replaces the details, so the new values win and an omitted field is cleared.
+        JsonObject raised = body(send("PUT", "/users/" + id, """
+                {"email": "dev@example.com", "name": "Dev", "role": "EMPLOYEE", "jobType": "Senior Engineer",
+                 "salary": 85000}""")).getAsJsonObject();
+        assertEquals("Senior Engineer", raised.get("jobType").getAsString());
+        assertEquals(85000, raised.get("salary").getAsInt());
+        assertFalse(body(send("PUT", "/users/" + id, "{\"email\": \"dev@example.com\", \"name\": \"Dev\","
+                + " \"role\": \"EMPLOYEE\"}")).getAsJsonObject().has("salary"));
+    }
+
+    @Test
     void newUsersAreValidated() {
         String managerId = app.createUser(token, "manager@example.com", "MANAGER", null);
         String body = "{\"email\": \"%s\", \"name\": \"N\", \"role\": \"%s\", \"password\": \"%s\"%s}";
