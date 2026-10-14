@@ -81,7 +81,9 @@ public class UserService {
     }
 
     public User create(User user, String password, User actor) {
-        User created = user.withArchived(false);
+        // Clients cannot create archived accounts or ones flagged for a forced password change.
+        User created = new User(user.id(), user.email(), user.name(), user.role(), user.managerId(), user.jobType(),
+                user.salary(), false, false);
         requireActiveManagerIfSet(created.managerId());
         users.insert(created, passwords.hash(password));
         audit("user_created", created, actor, Map.of("role", created.role().name()));
@@ -93,7 +95,7 @@ public class UserService {
         User existing = requireActive(id);
         // PUT replaces the account's details, so a jobType or salary left out of the body is cleared.
         User updated = new User(id, changes.email(), changes.name(), changes.role(), changes.managerId(),
-                changes.jobType(), changes.salary(), false);
+                changes.jobType(), changes.salary(), false, existing.passwordChangeRequired());
         if (existing.role() != updated.role()) {
             requireRoleCanChange(existing);
         }
@@ -190,6 +192,7 @@ public class UserService {
     private void audit(String action, User subject, User actor, Map<String, Object> extra) {
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("userId", subject.id());
+        details.put("name", subject.name());
         details.put("email", subject.email());
         details.putAll(extra);
         auditService.recordAction(action, actor.email(), details);

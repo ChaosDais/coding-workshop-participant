@@ -53,6 +53,9 @@ public class Router {
                 ApiRequest matched = request.withParams(params);
                 if (entry.access().signInRequired()) {
                     User user = authenticator.authenticate(request.header("Authorization"));
+                    if (user.passwordChangeRequired() && !entry.access().beforePasswordChange()) {
+                        throw new ForbiddenException("Change your password before continuing");
+                    }
                     if (!entry.access().allows(user.role())) {
                         throw new ForbiddenException("Access denied");
                     }

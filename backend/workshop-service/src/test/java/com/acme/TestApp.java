@@ -34,6 +34,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 class TestApp {
     static final String ADMIN_EMAIL = "admin@example.com";
+    /** The premade admin's starting password, which has to be changed on first sign-in. */
+    static final String INITIAL_ADMIN_PASSWORD = "initial-admin-1";
     static final String PASSWORD = "correct-horse-1";
 
     final MutableClock clock = new MutableClock();
@@ -46,14 +48,15 @@ class TestApp {
     }
 
     TestApp(InMemoryProjectRepository projects) {
-        AuditService audit = new AuditService(new InMemoryAuditRepository());
+        AuditService audit = new AuditService(new InMemoryAuditRepository(), clock);
         InMemoryTimeEntryRepository timeEntries = new InMemoryTimeEntryRepository(projects);
         // The lowest BCrypt cost keeps the tests fast; production uses 10.
         PasswordHasher passwords = new PasswordHasher(4);
         TokenService tokens = new TokenService(new InMemorySettingsRepository(), refreshTokens, clock);
         AppConfig config = new AppConfig();
         handler = new Handler(config.router(new TokenAuthenticator(tokens, users),
-                new AuthService(users, passwords, tokens, audit),
+                new AuthService(users, passwords, tokens, audit,
+                        new AuthService.DefaultAdmin(ADMIN_EMAIL, INITIAL_ADMIN_PASSWORD)),
                 new UserService(users, projects, passwords, tokens, audit),
                 new ProjectService(projects, users, timeEntries, audit, clock),
                 new TimeService(timeEntries, projects, users, audit, clock), audit));
@@ -84,10 +87,14 @@ class TestApp {
         return handler.handleRequest(event, null);
     }
 
-    /** Creates the first admin and returns an access token for them. */
+    /**
+     * Signs in as the premade admin (which creates it), changes its password to {@link #PASSWORD} as it must, and
+     * returns an access token.
+     */
     String setUpAdmin() {
-        assertEquals(201, send("POST", "/auth/setup", credentials(ADMIN_EMAIL, PASSWORD, "Ada Admin"), null)
-                .get("statusCode"));
+        String initial = signIn(ADMIN_EMAIL, INITIAL_ADMIN_PASSWORD).get("accessToken").getAsString();
+        assertEquals(204, send("POST", "/auth/password", "{\"currentPassword\": \"" + INITIAL_ADMIN_PASSWORD
+                + "\", \"newPassword\": \"" + PASSWORD + "\"}", initial).get("statusCode"));
         return signIn(ADMIN_EMAIL, PASSWORD).get("accessToken").getAsString();
     }
 
@@ -105,10 +112,6 @@ class TestApp {
                 + "\", \"role\": \"" + role + "\", \"password\": \"" + PASSWORD + "\"" + manager + "}", adminToken);
         assertEquals(201, response.get("statusCode"), () -> String.valueOf(response.get("body")));
         return body(response).getAsJsonObject().get("id").getAsString();
-    }
-
-    static String credentials(String email, String password, String name) {
-        return "{\"email\": \"" + email + "\", \"password\": \"" + password + "\", \"name\": \"" + name + "\"}";
     }
 
     static JsonElement body(Map<String, Object> response) {

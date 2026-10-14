@@ -5,7 +5,9 @@ import com.acme.models.Milestone;
 import com.acme.models.Project;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -20,6 +22,8 @@ import java.util.function.UnaryOperator;
 public class InMemoryProjectRepository implements ProjectRepository {
     private final Map<String, Project> projects = new ConcurrentHashMap<>();
     private final Set<String> archived = ConcurrentHashMap.newKeySet();
+    /** Milestones dropped from a project by replace, which the PostgreSQL repository keeps as archived. */
+    private final Map<String, List<Milestone>> archivedMilestones = new ConcurrentHashMap<>();
 
     @Override
     public void insert(Project project) {
@@ -47,8 +51,25 @@ public class InMemoryProjectRepository implements ProjectRepository {
     }
 
     @Override
-    public boolean replace(Project project) {
-        return !archived.contains(project.id()) && projects.replace(project.id(), project) != null;
+    public synchronized boolean replace(Project project) {
+        Project previous = projects.get(project.id());
+        if (previous == null || archived.contains(project.id())) {
+            return false;
+        }
+        Set<String> kept = new HashSet<>(project.milestones().stream().map(Milestone::id).toList());
+        List<Milestone> dropped = previous.milestones().stream().filter(milestone -> !kept.contains(milestone.id()))
+                .toList();
+        List<Milestone> archivedList = new ArrayList<>(archivedMilestones.getOrDefault(project.id(), List.of()));
+        archivedList.removeIf(milestone -> kept.contains(milestone.id()));
+        archivedList.addAll(dropped);
+        archivedMilestones.put(project.id(), archivedList);
+        projects.put(project.id(), project);
+        return true;
+    }
+
+    @Override
+    public List<Milestone> findArchivedMilestones(String projectId) {
+        return List.copyOf(archivedMilestones.getOrDefault(projectId, List.of()));
     }
 
     @Override

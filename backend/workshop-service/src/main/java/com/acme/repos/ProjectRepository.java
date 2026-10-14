@@ -1,6 +1,7 @@
 package com.acme.repos;
 
 import com.acme.models.CompletionStatus;
+import com.acme.models.Milestone;
 import com.acme.models.Project;
 
 import java.time.Instant;
@@ -36,6 +37,9 @@ public interface ProjectRepository {
      * active project.
      */
     boolean setMilestoneStatus(String projectId, String milestoneId, CompletionStatus status, Instant completedAt);
+
+    /** The archived milestones of a project, whether the project itself is archived or not, in their last order. */
+    List<Milestone> findArchivedMilestones(String projectId);
 
     /** Returns false when there is no active project with this id. */
     boolean archive(String id);

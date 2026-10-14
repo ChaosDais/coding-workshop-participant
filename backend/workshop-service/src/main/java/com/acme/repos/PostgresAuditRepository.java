@@ -1,6 +1,7 @@
 package com.acme.repos;
 
 import com.acme.models.AuditEntry;
+import com.acme.models.AuditQuery;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 
@@ -42,13 +43,49 @@ public class PostgresAuditRepository implements AuditRepository {
     }
 
     @Override
-    public List<AuditEntry> findRecent(int limit) {
+    public List<AuditEntry> find(AuditQuery query) {
+        List<String> conditions = new ArrayList<>();
+        List<Object> values = new ArrayList<>();
+        if (query.projectId() != null) {
+            conditions.add("details ->> 'projectId' = ?");
+            values.add(query.projectId());
+        }
+        if (query.milestoneId() != null) {
+            conditions.add("details ->> 'milestoneId' = ?");
+            values.add(query.milestoneId());
+        }
+        if (query.from() != null) {
+            conditions.add("occurred_at >= ?");
+            values.add(query.from().atStartOfDay().atOffset(ZoneOffset.UTC));
+        }
+        if (query.to() != null) {
+            conditions.add("occurred_at < ?");
+            values.add(query.to().plusDays(1).atStartOfDay().atOffset(ZoneOffset.UTC));
+        }
+        if (query.text() != null) {
+            conditions.add("(action ILIKE ? OR actor ILIKE ? OR details::text ILIKE ?)");
+            String pattern = "%" + query.text().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+            values.add(pattern);
+            values.add(pattern);
+            values.add(pattern);
+        }
+        String where = conditions.isEmpty() ? "" : " WHERE " + String.join(" AND ", conditions);
+        if (!query.actions().isEmpty()) {
+            where += (where.isEmpty() ? " WHERE " : " AND ") + "action = ANY (?)";
+        }
+        String sql = "SELECT id, action, actor, details, occurred_at FROM audit_entries" + where
+                + " ORDER BY occurred_at DESC LIMIT ?";
         return database.run(connection -> {
             List<AuditEntry> entries = new ArrayList<>();
-            try (PreparedStatement statement = connection.prepareStatement(
-                    "SELECT id, action, actor, details, occurred_at FROM audit_entries"
-                            + " ORDER BY occurred_at DESC LIMIT ?")) {
-                statement.setInt(1, limit);
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                int index = 1;
+                for (Object value : values) {
+                    statement.setObject(index++, value);
+                }
+                if (!query.actions().isEmpty()) {
+                    statement.setArray(index++, connection.createArrayOf("text", query.actions().toArray()));
+                }
+                statement.setInt(index, query.limit());
                 try (ResultSet row = statement.executeQuery()) {
                     while (row.next()) {
                         entries.add(new AuditEntry(

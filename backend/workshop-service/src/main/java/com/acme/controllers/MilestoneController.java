@@ -10,7 +10,8 @@ import com.acme.models.Role;
 import com.acme.services.ProjectService;
 
 /**
- * Milestones of one project, under /projects/{projectId}/milestones; DELETE archives a milestone.
+ * Milestones of one project, under /projects/{projectId}/milestones; DELETE archives a milestone, and GET with
+ * ?archived=true lists the archived ones.
  * Admins and the project's manager; employees can only move their own milestones to AWAITING_REVIEW through
  * PUT .../status (checked in {@link ProjectService}).
  */
@@ -29,7 +30,10 @@ public class MilestoneController implements Controller {
 
     @Override
     public void register(Router router) {
-        router.post("/projects/{projectId}/milestones", ADMINS_AND_MANAGERS, request -> ApiResponse.created(
+        router.get("/projects/{projectId}/milestones", ADMINS_AND_MANAGERS, request -> ApiResponse.ok(
+                        service.milestones(request.param("projectId"), request.booleanQuery("archived"),
+                                request.user())))
+                .post("/projects/{projectId}/milestones", ADMINS_AND_MANAGERS, request -> ApiResponse.created(
                         service.addMilestone(request.param("projectId"), request.body(Milestone.class),
                                 request.user())))
                 .put("/projects/{projectId}/milestones/{milestoneId}", ADMINS_AND_MANAGERS, request -> ApiResponse.ok(

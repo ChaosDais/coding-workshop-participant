@@ -4,6 +4,7 @@ import com.acme.models.AuditEntry;
 import com.acme.repos.InMemoryAuditRepository;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 
@@ -13,7 +14,7 @@ class AuditServiceTest {
 
     @Test
     void recordsEntriesNewestFirstWithDefaults() {
-        AuditService auditService = new AuditService(new InMemoryAuditRepository());
+        AuditService auditService = new AuditService(new InMemoryAuditRepository(), Clock.systemUTC());
 
         AuditEntry first = auditService.recordAction("create", "alice", Map.of("resource", "order-42"));
         AuditEntry defaulted = auditService.recordAction(" ", null, null);

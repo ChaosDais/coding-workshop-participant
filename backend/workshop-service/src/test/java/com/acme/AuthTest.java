@@ -9,37 +9,58 @@ import java.util.Map;
 import static com.acme.TestApp.ADMIN_EMAIL;
 import static com.acme.TestApp.PASSWORD;
 import static com.acme.TestApp.body;
-import static com.acme.TestApp.credentials;
 import static com.acme.TestApp.error;
 import static com.acme.TestApp.status;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Sign-in, tokens and the per-endpoint permission checks. */
 class AuthTest {
     private final TestApp app = new TestApp();
 
     @Test
-    void firstAdminCanOnlyBeCreatedOnce() {
-        String token = app.setUpAdmin();
+    void thePremadeAdminIsCreatedOnFirstSignInAndMustChangeItsPassword() {
+        JsonObject session = app.signIn(ADMIN_EMAIL, TestApp.INITIAL_ADMIN_PASSWORD);
+        JsonObject admin = session.getAsJsonObject("user");
+        assertEquals("ADMIN", admin.get("role").getAsString());
+        assertTrue(admin.get("passwordChangeRequired").getAsBoolean());
+        assertFalse(admin.has("password") || admin.has("passwordHash"));
+        String token = session.get("accessToken").getAsString();
 
-        Map<String, Object> again = app.send("POST", "/auth/setup", credentials("second@example.com", PASSWORD, "B"),
-                null);
-        assertEquals(409, status(again));
-        JsonObject me = body(app.send("GET", "/auth/me", null, token)).getAsJsonObject();
-        assertEquals("ADMIN", me.get("role").getAsString());
-        assertFalse(me.has("password") || me.has("passwordHash"));
+        // Until the password is changed, only the account's own routes work.
+        assertEquals(200, status(app.send("GET", "/auth/me", null, token)));
+        Map<String, Object> blocked = app.send("GET", "/projects", null, token);
+        assertEquals(403, status(blocked));
+        assertEquals("Change your password before continuing", error(blocked));
+        assertEquals(403, status(app.send("POST", "/users", "{}", token)));
+        assertEquals(403, status(app.send("PUT", "/auth/me", "{\"name\": \"A\", \"email\": \"a@example.com\"}",
+                token)));
+
+        assertEquals(204, status(app.send("POST", "/auth/password", "{\"currentPassword\": \""
+                + TestApp.INITIAL_ADMIN_PASSWORD + "\", \"newPassword\": \"" + PASSWORD + "\"}", token)));
+        // The same token works once the change is done, because the account is reloaded on every request.
+        assertEquals(200, status(app.send("GET", "/projects", null, token)));
+        assertFalse(body(app.send("GET", "/auth/me", null, token)).getAsJsonObject()
+                .get("passwordChangeRequired").getAsBoolean());
+        assertEquals(401, status(app.send("POST", "/auth/login", "{\"email\": \"" + ADMIN_EMAIL
+                + "\", \"password\": \"" + TestApp.INITIAL_ADMIN_PASSWORD + "\"}", null)));
     }
 
     @Test
-    void setupValidatesItsInput() {
-        assertEquals("password must be at least 8 characters",
-                error(app.send("POST", "/auth/setup", credentials(ADMIN_EMAIL, "short", "A"), null)));
-        assertEquals("email must be a valid email address",
-                error(app.send("POST", "/auth/setup", credentials("not-an-email", PASSWORD, "A"), null)));
-        // Nothing was created by the failed attempts.
-        assertEquals(201, status(app.send("POST", "/auth/setup", credentials(ADMIN_EMAIL, PASSWORD, "A"), null)));
+    void thePremadeAdminIsOnlyCreatedWhileThereAreNoAccounts() {
+        String token = app.setUpAdmin();
+        String premadeId = body(app.send("GET", "/auth/me", null, token)).getAsJsonObject().get("id").getAsString();
+        app.createUser(token, "second-admin@example.com", "ADMIN", null);
+        String secondToken = app.signIn("second-admin@example.com", PASSWORD).get("accessToken").getAsString();
+        assertEquals(204, status(app.send("DELETE", "/users/" + premadeId, null, secondToken)));
+        // Archiving does not delete, so the database is not empty and no second premade admin appears.
+        assertEquals(401, status(app.send("POST", "/auth/login", "{\"email\": \"" + ADMIN_EMAIL
+                + "\", \"password\": \"" + TestApp.INITIAL_ADMIN_PASSWORD + "\"}", null)));
+        assertEquals(2, app.users.findAll(false).size() + app.users.findAll(true).size());
+        // The setup endpoint it replaces is gone.
+        assertEquals(404, status(app.send("POST", "/auth/setup", "{}", null)));
     }
 
     @Test

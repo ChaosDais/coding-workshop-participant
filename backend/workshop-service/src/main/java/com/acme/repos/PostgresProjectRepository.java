@@ -159,6 +159,12 @@ public class PostgresProjectRepository implements ProjectRepository {
     }
 
     @Override
+    public List<Milestone> findArchivedMilestones(String projectId) {
+        return database.run(connection -> findMilestones(connection, projectId, true)
+                .getOrDefault(projectId, List.of()));
+    }
+
+    @Override
     public boolean archive(String id) {
         return setArchived(id, true);
     }
@@ -223,9 +229,15 @@ public class PostgresProjectRepository implements ProjectRepository {
     /** Active milestones by project id, for one project or, when projectId is null, for all of them. */
     private static Map<String, List<Milestone>> findMilestones(Connection connection, String projectId)
             throws SQLException {
+        return findMilestones(connection, projectId, false);
+    }
+
+    private static Map<String, List<Milestone>> findMilestones(Connection connection, String projectId,
+                                                               boolean archived) throws SQLException {
         Map<String, List<Milestone>> byProject = new HashMap<>();
         try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT " + MILESTONE_COLUMNS + " FROM milestones WHERE archived_at IS NULL"
+                "SELECT " + MILESTONE_COLUMNS + " FROM milestones WHERE archived_at IS "
+                        + (archived ? "NOT NULL" : "NULL")
                         + (projectId == null ? "" : " AND project_id = ?") + " ORDER BY project_id, sort_order")) {
             if (projectId != null) {
                 statement.setString(1, projectId);

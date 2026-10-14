@@ -7,10 +7,10 @@ import java.util.Map;
 import java.util.UUID;
 
 public record AuditEntry(String id, String action, String actor, Map<String, Object> details, Instant timestamp) {
-    public AuditEntry(String action, String actor, Map<String, Object> details) {
+    public AuditEntry(String action, String actor, Map<String, Object> details, Instant at) {
         // Millisecond precision is what the database keeps, so a stored entry reads back equal.
         this(UUID.randomUUID().toString(), action, actor, new LinkedHashMap<>(details == null ? Map.of() : details),
-                Instant.now().truncatedTo(ChronoUnit.MILLIS));
+                at.truncatedTo(ChronoUnit.MILLIS));
     }
 
     public Map<String, Object> asMap() {

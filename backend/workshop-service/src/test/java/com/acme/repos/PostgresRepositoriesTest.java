@@ -2,6 +2,7 @@ package com.acme.repos;
 
 import com.acme.errors.ConflictException;
 import com.acme.models.AuditEntry;
+import com.acme.models.AuditQuery;
 import com.acme.models.CompletionStatus;
 import com.acme.models.Milestone;
 import com.acme.models.Project;
@@ -83,6 +84,8 @@ class PostgresRepositoriesTest {
 
                 // The milestone left out of the update is archived, not deleted, and its id cannot be reused.
                 assertEquals(1, count(admin, schema, "milestones WHERE id = 'm1' AND archived_at IS NOT NULL"));
+                assertEquals(List.of("m1"), projects.findArchivedMilestones("p1").stream().map(Milestone::id)
+                        .toList());
                 Project reusingId = new Project("p1", "Gemini", null, project.startDate(), project.endDate(), 20,
                         "erin", new BigDecimal("1.00"), CompletionStatus.COMPLETE, List.of(build, design), null, null);
                 assertThrows(ConflictException.class, () -> projects.replace(reusingId));
@@ -104,12 +107,34 @@ class PostgresRepositoriesTest {
                 assertEquals(2, count(admin, schema, "milestones"));
 
                 AuditRepository audit = new PostgresAuditRepository(database);
-                AuditEntry entry = new AuditEntry("project_created", "alice", Map.of("projectId", "p1"));
+                AuditEntry entry = new AuditEntry("project_created", "alice", Map.of("projectId", "p1"),
+                        Instant.parse("2026-10-14T12:00:00Z"));
+                AuditEntry older = new AuditEntry("milestone_added", "bob", Map.of("projectId", "p1",
+                        "milestoneId", "m1", "note", "100%_done"), Instant.parse("2026-10-12T08:00:00Z"));
+                AuditEntry other = new AuditEntry("user_created", "alice", Map.of("userId", "u1"),
+                        Instant.parse("2026-10-13T08:00:00Z"));
                 audit.insert(entry);
+                audit.insert(older);
+                audit.insert(other);
                 // A second database object sees the same rows, so nothing depends on in-memory state.
                 AuditRepository reopened = new PostgresAuditRepository(new PostgresDatabase(
                         url + (url.contains("?") ? "&" : "?") + "currentSchema=" + schema, null, null));
-                assertEquals(List.of(entry), reopened.findRecent(10));
+                assertEquals(List.of(entry, other, older), reopened.find(AuditQuery.recent(10)));
+                assertEquals(List.of(entry, older), reopened.find(
+                        new AuditQuery("p1", null, null, null, null, null, 10)));
+                assertEquals(List.of(older), reopened.find(new AuditQuery(null, "m1", null, null, null, null, 10)));
+                assertEquals(List.of(entry, other), reopened.find(
+                        new AuditQuery(null, null, List.of("project_created", "user_created"), null, null, null, 10)));
+                assertEquals(List.of(other), reopened.find(new AuditQuery(null, null, null,
+                        LocalDate.of(2026, 10, 13), LocalDate.of(2026, 10, 13), null, 10)));
+                assertEquals(List.of(other, older), reopened.find(
+                        new AuditQuery(null, null, null, null, LocalDate.of(2026, 10, 13), null, 10)));
+                // Text matching ignores case, and % and _ are matched literally rather than as wildcards.
+                assertEquals(List.of(entry, other), reopened.find(new AuditQuery(null, null, null, null, null, "ALICE",
+                        10)));
+                assertEquals(List.of(older), reopened.find(new AuditQuery(null, null, null, null, null, "100%_", 10)));
+                assertEquals(List.of(), reopened.find(new AuditQuery(null, null, null, null, null, "1%0", 10)));
+                assertEquals(List.of(entry), reopened.find(AuditQuery.recent(1)));
             } finally {
                 statement.execute("DROP SCHEMA " + schema + " CASCADE");
             }
@@ -130,17 +155,18 @@ class PostgresRepositoriesTest {
                         url + (url.contains("?") ? "&" : "?") + "currentSchema=" + schema, null, null);
                 UserRepository users = new PostgresUserRepository(database);
 
-                User boss = new User("u1", "Boss@Example.com", "Boss", Role.ADMIN, null, null, null, false);
+                User boss = new User("u1", "Boss@Example.com", "Boss", Role.ADMIN, null, null, null, false, false);
                 User manager = new User("u2", "manager@example.com", "Manager", Role.MANAGER, null, "Team lead",
-                        new BigDecimal("95000.50"), false);
+                        new BigDecimal("95000.50"), false, false);
                 User employee = new User("u3", "employee@example.com", "Employee", Role.EMPLOYEE, "u2", "Developer",
-                        new BigDecimal("70000"), false);
+                        new BigDecimal("70000"), false, false);
                 assertTrue(users.insertIfEmpty(boss, "hash-1"));
                 assertFalse(users.insertIfEmpty(manager, "hash-2"));
                 users.insert(manager, "hash-2");
                 users.insert(employee, "hash-3");
                 assertThrows(ConflictException.class, () -> users.insert(
-                        new User("u4", "MANAGER@example.com", "Dup", Role.EMPLOYEE, null, null, null, false), "h"));
+                        new User("u4", "MANAGER@example.com", "Dup", Role.EMPLOYEE, null, null, null, false, false),
+                        "h"));
 
                 assertEquals(boss, users.findById("u1").orElseThrow());
                 assertEquals(manager, users.findById("u2").orElseThrow());
@@ -150,12 +176,12 @@ class PostgresRepositoriesTest {
                 assertEquals(1, users.countActiveEmployeesOf("u2"));
 
                 User promoted = new User("u3", "employee@example.com", "Employee", Role.EMPLOYEE, null,
-                        "Senior developer", new BigDecimal("80000.00"), false);
+                        "Senior developer", new BigDecimal("80000.00"), false, false);
                 users.update(promoted);
                 assertEquals(0, users.countActiveEmployeesOf("u2"));
                 assertEquals(promoted, users.findById("u3").orElseThrow());
                 assertThrows(ConflictException.class, () -> users.update(
-                        new User("u3", "boss@example.com", "Employee", Role.EMPLOYEE, null, null, null, false)));
+                        new User("u3", "boss@example.com", "Employee", Role.EMPLOYEE, null, null, null, false, false)));
                 users.setPasswordHash("u3", "hash-new");
                 assertEquals("hash-new", users.findByEmail("employee@example.com").orElseThrow().passwordHash());
 
@@ -201,7 +227,7 @@ class PostgresRepositoriesTest {
                 PostgresDatabase database = new PostgresDatabase(
                         url + (url.contains("?") ? "&" : "?") + "currentSchema=" + schema, null, null);
                 new PostgresUserRepository(database).insert(
-                        new User("e1", "e1@example.com", "E1", Role.EMPLOYEE, null, null, null, false), "hash");
+                        new User("e1", "e1@example.com", "E1", Role.EMPLOYEE, null, null, null, false, false), "hash");
                 ProjectRepository projects = new PostgresProjectRepository(database);
                 Milestone milestone = new Milestone("m1", "Design", null, LocalDate.of(2026, 1, 1),
                         LocalDate.of(2026, 2, 1), 1.0, List.of("e1"), CompletionStatus.IN_PROGRESS, null, null);

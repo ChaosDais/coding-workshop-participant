@@ -99,14 +99,15 @@ public class AppConfig {
     }
 
     @Bean
-    public AuditService auditService(AuditRepository auditRepository) {
-        return new AuditService(auditRepository);
+    public AuditService auditService(AuditRepository auditRepository, Clock clock) {
+        return new AuditService(auditRepository, clock);
     }
 
     @Bean
     public AuthService authService(UserRepository userRepository, PasswordHasher passwordHasher,
                                    TokenService tokenService, AuditService auditService) {
-        return new AuthService(userRepository, passwordHasher, tokenService, auditService);
+        return new AuthService(userRepository, passwordHasher, tokenService, auditService,
+                AuthService.DefaultAdmin.fromEnvironment(System.getenv()));
     }
 
     @Bean

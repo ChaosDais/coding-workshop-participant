@@ -7,6 +7,7 @@ import {
   buildUrl, fillPlaceholders, getServiceNames, parseJson, refreshTokens, sendRequest,
 } from '../services/apiClient.js';
 import { PRESETS, VALUE_FIELDS } from '../services/presets.js';
+import './ApiTester.css';
 
 const DEFAULT_SERVICE = 'workshop-service';
 

@@ -30,6 +30,10 @@ public interface UserRepository {
     /** Updates email, name, role, manager, job type and salary. */
     void update(User user);
 
+    /** True once any account exists, archived or not. */
+    boolean hasAnyUser();
+
+    /** Stores a new password hash, which also clears any pending forced password change. */
     void setPasswordHash(String id, String passwordHash);
 
     /** Returns false when there is no active user with this id. */

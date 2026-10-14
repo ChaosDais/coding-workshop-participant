@@ -1,8 +1,10 @@
 package com.acme.services;
 
 import com.acme.models.AuditEntry;
+import com.acme.models.AuditQuery;
 import com.acme.repos.AuditRepository;
 
+import java.time.Clock;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,9 +13,11 @@ public class AuditService {
     static final int RECENT_LIMIT = 100;
 
     private final AuditRepository repository;
+    private final Clock clock;
 
-    public AuditService(AuditRepository repository) {
+    public AuditService(AuditRepository repository, Clock clock) {
         this.repository = repository;
+        this.clock = clock;
     }
 
     public AuditEntry recordAction(String action, String actor, Map<String, Object> details) {
@@ -25,17 +29,22 @@ public class AuditService {
             safeDetails.putAll(details);
         }
 
-        AuditEntry entry = new AuditEntry(normalizedAction, normalizedActor, safeDetails);
+        AuditEntry entry = new AuditEntry(normalizedAction, normalizedActor, safeDetails, clock.instant());
         repository.insert(entry);
         return entry;
     }
 
     /** Returns the most recent entries, newest first. */
     public List<AuditEntry> getAuditEntries() {
-        return repository.findRecent(RECENT_LIMIT);
+        return repository.find(AuditQuery.recent(RECENT_LIMIT));
     }
 
     public List<Map<String, Object>> getAuditEntriesAsMaps() {
         return getAuditEntries().stream().map(AuditEntry::asMap).toList();
+    }
+
+    /** The entries matching the query, newest first, in their response form. */
+    public List<Map<String, Object>> find(AuditQuery query) {
+        return repository.find(query).stream().map(AuditEntry::asMap).toList();
     }
 }

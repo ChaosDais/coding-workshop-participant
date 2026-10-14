@@ -8,10 +8,12 @@ import java.util.UUID;
 /**
  * An account. A blank id is replaced with a generated one; only employees have a manager.
  * Job type and salary are optional, since accounts created before they existed have neither.
+ * passwordChangeRequired is set on the premade admin account, which must choose its own password before doing
+ * anything else.
  * The password hash is kept by the repository and is never part of this record, so it cannot leak into a response.
  */
 public record User(String id, String email, String name, Role role, String managerId, String jobType,
-                   BigDecimal salary, boolean archived) {
+                   BigDecimal salary, boolean archived, boolean passwordChangeRequired) {
     public User {
         id = id == null || id.isBlank() ? UUID.randomUUID().toString() : id.trim();
         email = Checks.email(email);
@@ -30,15 +32,15 @@ public record User(String id, String email, String name, Role role, String manag
     }
 
     public User withManager(String newManagerId) {
-        return new User(id, email, name, role, newManagerId, jobType, salary, archived);
+        return new User(id, email, name, role, newManagerId, jobType, salary, archived, passwordChangeRequired);
     }
 
     /** The same account without its salary, for viewers who may not see pay. */
     public User withoutSalary() {
-        return new User(id, email, name, role, managerId, jobType, null, archived);
+        return new User(id, email, name, role, managerId, jobType, null, archived, passwordChangeRequired);
     }
 
     public User withArchived(boolean newArchived) {
-        return new User(id, email, name, role, managerId, jobType, salary, newArchived);
+        return new User(id, email, name, role, managerId, jobType, salary, newArchived, passwordChangeRequired);
     }
 }

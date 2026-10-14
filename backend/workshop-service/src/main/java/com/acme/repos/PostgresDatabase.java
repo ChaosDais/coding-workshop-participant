@@ -59,6 +59,7 @@ public class PostgresDatabase {
                 job_type TEXT,
                 salary NUMERIC,
                 password_hash TEXT NOT NULL,
+                password_change_required BOOLEAN NOT NULL DEFAULT false,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 archived_at TIMESTAMPTZ
             )""",
@@ -101,6 +102,7 @@ public class PostgresDatabase {
             // Upgrades tables created by earlier versions; rows are archived, never deleted.
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS job_type TEXT",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS salary NUMERIC",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_change_required BOOLEAN NOT NULL DEFAULT false",
             "ALTER TABLE milestones ADD COLUMN IF NOT EXISTS description TEXT",
             "ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT",
             "ALTER TABLE projects ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ",

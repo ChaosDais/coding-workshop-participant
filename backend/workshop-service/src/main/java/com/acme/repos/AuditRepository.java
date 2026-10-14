@@ -1,6 +1,7 @@
 package com.acme.repos;
 
 import com.acme.models.AuditEntry;
+import com.acme.models.AuditQuery;
 
 import java.util.List;
 
@@ -8,6 +9,6 @@ import java.util.List;
 public interface AuditRepository {
     void insert(AuditEntry entry);
 
-    /** Returns at most {@code limit} entries, newest first. */
-    List<AuditEntry> findRecent(int limit);
+    /** The entries matching the query, newest first. */
+    List<AuditEntry> find(AuditQuery query);
 }

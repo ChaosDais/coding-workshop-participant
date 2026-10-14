@@ -15,9 +15,10 @@ import java.util.Optional;
 /** Stores accounts in the "users" table; archived users keep their row with archived_at set. */
 public class PostgresUserRepository implements UserRepository {
     private static final String COLUMNS =
-            "id, email, name, role, manager_id, job_type, salary, archived_at IS NOT NULL AS archived";
+            "id, email, name, role, manager_id, job_type, salary, archived_at IS NOT NULL AS archived,"
+                    + " password_change_required";
     private static final String INSERT = "INSERT INTO users (id, email, name, role, manager_id, job_type, salary,"
-            + " password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+            + " password_hash, password_change_required) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
     private static final String UNIQUE_VIOLATION = "23505";
 
     private final PostgresDatabase database;
@@ -118,10 +119,20 @@ public class PostgresUserRepository implements UserRepository {
     }
 
     @Override
+    public boolean hasAnyUser() {
+        return database.run(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("SELECT 1 FROM users LIMIT 1");
+                 ResultSet row = statement.executeQuery()) {
+                return row.next();
+            }
+        });
+    }
+
+    @Override
     public void setPasswordHash(String id, String passwordHash) {
         database.run(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
-                    "UPDATE users SET password_hash = ? WHERE id = ?")) {
+                    "UPDATE users SET password_hash = ?, password_change_required = false WHERE id = ?")) {
                 statement.setString(1, passwordHash);
                 statement.setString(2, id);
                 statement.executeUpdate();
@@ -160,6 +171,7 @@ public class PostgresUserRepository implements UserRepository {
             statement.setString(6, user.jobType());
             statement.setBigDecimal(7, user.salary());
             statement.setString(8, passwordHash);
+            statement.setBoolean(9, user.passwordChangeRequired());
             statement.executeUpdate();
         } catch (SQLException e) {
             throw duplicateEmailOr(e, user);
@@ -199,6 +211,6 @@ public class PostgresUserRepository implements UserRepository {
     private static User toUser(ResultSet row) throws SQLException {
         return new User(row.getString("id"), row.getString("email"), row.getString("name"),
                 Role.valueOf(row.getString("role")), row.getString("manager_id"), row.getString("job_type"),
-                row.getBigDecimal("salary"), row.getBoolean("archived"));
+                row.getBigDecimal("salary"), row.getBoolean("archived"), row.getBoolean("password_change_required"));
     }
 }

@@ -1,0 +1,110 @@
+// @vitest-environment jsdom
+import {
+  afterEach, beforeEach, describe, expect, it,
+} from 'vitest';
+import {
+  cleanup, render, screen, within,
+} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { AuthProvider } from '../auth/AuthContext.jsx';
+import ProjectsPage from './ProjectsPage.jsx';
+import { setSession } from '../services/api.js';
+import { fakeBackend } from '../test/fakeBackend.js';
+
+const manager = { id: 'm1', name: 'Morgan Manager', role: 'MANAGER', archived: false };
+const project = (id, name, status, dependsOn = [], extra = {}) => ({
+  id, name, status, dependsOn, manager: 'm1', startDate: '2026-01-01', endDate: '2026-12-31', progressTime: 12.5,
+  budget: 1000, spent: 0, milestones: [], ...extra,
+});
+
+beforeEach(() => {
+  setSession({ accessToken: 'a', refreshToken: 'r', user: { id: 'admin', name: 'Admin', role: 'ADMIN' } });
+  fakeBackend({
+    'GET /projects': [
+      project('p1', 'Design', 'IN_PROGRESS'),
+      project('p2', 'Build', 'TODO', ['p1'], { startDate: '2026-02-01', endDate: '2026-06-30' }),
+      project('p4', 'Launch prep', 'COMPLETE', [], { manager: 'm2', startDate: '2025-06-01' }),
+    ],
+    'GET /projects?archived=true': [project('p3', 'Pilot', 'IN_PROGRESS')],
+    'GET /users': [manager, { id: 'm2', name: 'Riley Lead', role: 'MANAGER', archived: false }],
+    'GET /users?archived=true': [],
+  });
+});
+afterEach(cleanup);
+
+function renderPage() {
+  return render(<AuthProvider><ProjectsPage /></AuthProvider>);
+}
+
+describe('projects page', () => {
+  it('lists current projects with status, manager, progress and availability', async () => {
+    renderPage();
+    const build = (await screen.findByText('Build')).closest('tr');
+    expect(within(build).getByText('To do')).toBeTruthy();
+    expect(within(build).getByText('Morgan Manager')).toBeTruthy();
+    expect(within(build).getByText('12.5 h')).toBeTruthy();
+    expect(within(build).getByText('Blocked by Design')).toBeTruthy();
+    expect(within(screen.getByText('Design').closest('tr')).getByText('Available')).toBeTruthy();
+    expect(screen.queryByText('Pilot')).toBeNull();
+  });
+
+  it('shows each project start and expected end date', async () => {
+    renderPage();
+    const build = (await screen.findByText('Build')).closest('tr');
+    expect(within(build).getByText('Feb 1, 2026')).toBeTruthy();
+    expect(within(build).getByText('Jun 30, 2026')).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Expected end' })).toBeTruthy();
+  });
+
+  it('hides completed projects until asked, then shows them greyed out at the bottom', async () => {
+    renderPage();
+    await screen.findByText('Build');
+    expect(screen.queryByText('Launch prep')).toBeNull();
+
+    await userEvent.click(screen.getByLabelText('Show completed projects'));
+    const rows = screen.getAllByRole('row').slice(1);
+    const last = rows.at(-1);
+    expect(within(last).getByText('Launch prep')).toBeTruthy();
+    expect(within(last).getByText('Completed')).toBeTruthy();
+    expect(last.className).toContain('completed');
+  });
+
+  it('searches and filters by status and manager', async () => {
+    renderPage();
+    await screen.findByText('Build');
+
+    await userEvent.type(screen.getByLabelText('Search'), 'buil');
+    expect(screen.getAllByRole('row')).toHaveLength(2);
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+
+    await userEvent.selectOptions(screen.getByLabelText('Status'), 'COMPLETE');
+    expect(screen.getByText('Launch prep')).toBeTruthy();
+    expect(screen.queryByText('Build')).toBeNull();
+    await userEvent.selectOptions(screen.getByLabelText('Status'), '');
+
+    await userEvent.selectOptions(screen.getByLabelText('Manager'), 'm1');
+    expect(screen.getByText('Build')).toBeTruthy();
+    await userEvent.selectOptions(screen.getByLabelText('Manager'), 'm2');
+    expect(screen.getByText(/No projects match these filters/)).toBeTruthy();
+  });
+
+  it('shows archived projects on request', async () => {
+    renderPage();
+    await screen.findByText('Build');
+    await userEvent.click(screen.getByLabelText('Show archived projects'));
+    const pilot = screen.getByText('Pilot').closest('tr');
+    expect(within(pilot).getByText('Archived')).toBeTruthy();
+  });
+
+  it('validates a new project before creating it', async () => {
+    renderPage();
+    await screen.findByText('Build');
+    await userEvent.click(screen.getByRole('button', { name: 'New project' }));
+    const dialog = screen.getByRole('dialog', { name: 'New project' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save project' }));
+
+    expect(within(dialog).getByText('Name is required')).toBeTruthy();
+    expect(within(dialog).getByText('Manager is required')).toBeTruthy();
+    expect(within(dialog).getByText('Start date is required')).toBeTruthy();
+  });
+});

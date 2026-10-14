@@ -77,6 +77,24 @@ public class ProjectService {
         return view(require(id, actor), actor);
     }
 
+    /**
+     * A project's active or archived milestones. Admins can list them for archived projects too; managers only for
+     * the active projects they manage.
+     */
+    public List<Milestone> milestones(String projectId, boolean archived, User actor) {
+        if (actor.role() == Role.ADMIN && !projects.exists(projectId)) {
+            throw new NotFoundException("Project " + projectId + " not found");
+        }
+        if (actor.role() == Role.ADMIN && archived) {
+            return projects.findArchivedMilestones(projectId);
+        }
+        Project project = actor.role() == Role.ADMIN
+                ? projects.findById(projectId).or(() -> projects.findAll(true).stream()
+                        .filter(found -> found.id().equals(projectId)).findFirst()).orElseThrow()
+                : requireEditable(projectId, actor);
+        return archived ? projects.findArchivedMilestones(projectId) : project.milestones();
+    }
+
     /** The active project, if this user may see it. */
     Project require(String id, User actor) {
         Project project = projects.findById(id)
@@ -205,7 +223,7 @@ public class ProjectService {
         Project updated = ProjectRules.apply(project, project.withMilestones(milestones), clock.instant());
         checkProjectDependencies(project, updated);
         save(updated);
-        audit("milestone_added", project, milestone.id(), actor);
+        audit("milestone_added", project, milestone, actor);
         return updated.milestones().get(milestones.size() - 1);
     }
 
@@ -221,7 +239,7 @@ public class ProjectService {
         Project updated = ProjectRules.apply(project, project.withMilestones(milestones), clock.instant());
         checkProjectDependencies(project, updated);
         save(updated);
-        audit("milestone_updated", project, milestoneId, actor);
+        audit("milestone_updated", project, changed, actor);
         return updated.milestones().get(index);
     }
 
@@ -262,7 +280,7 @@ public class ProjectService {
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("from", milestone.status().name());
         details.put("to", status.name());
-        audit("milestone_status_changed", project, milestoneId, actor, details);
+        audit("milestone_status_changed", project, milestone, actor, details);
         return changed;
     }
 
@@ -279,7 +297,7 @@ public class ProjectService {
         List<Milestone> milestones = new ArrayList<>(project.milestones());
         milestones.remove(index);
         save(project.withMilestones(milestones));
-        audit("milestone_archived", project, milestoneId, actor);
+        audit("milestone_archived", project, project.milestones().get(index), actor);
     }
 
     /**
@@ -423,16 +441,19 @@ public class ProjectService {
         }
     }
 
-    private void audit(String action, Project project, String milestoneId, User actor) {
-        audit(action, project, milestoneId, actor, Map.of());
+    /** Records a change to the project, or to one of its milestones when {@code milestone} is set. */
+    private void audit(String action, Project project, Milestone milestone, User actor) {
+        audit(action, project, milestone, actor, Map.of());
     }
 
-    private void audit(String action, Project project, String milestoneId, User actor, Map<String, Object> extra) {
+    private void audit(String action, Project project, Milestone milestone, User actor, Map<String, Object> extra) {
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("projectId", project.id());
         details.put("projectName", project.name());
-        if (milestoneId != null) {
-            details.put("milestoneId", milestoneId);
+        if (milestone != null) {
+            // The name is stored too, so the log stays readable after the milestone is renamed or archived.
+            details.put("milestoneId", milestone.id());
+            details.put("milestoneName", milestone.name());
         }
         details.putAll(extra);
         auditService.recordAction(action, actor.email(), details);

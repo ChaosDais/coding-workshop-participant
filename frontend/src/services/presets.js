@@ -11,6 +11,7 @@ export const VALUE_FIELDS = [
   { name: 'milestoneId', label: 'Milestone id', hint: 'filled in after Add milestone' },
 ];
 
+// The local development admin; on a fresh database the premade admin is admin@acme.com (see ARCHITECTURE.md).
 const admin = { email: 'admin@example.com', password: 'change-me-now' };
 
 const sampleProject = {
@@ -48,14 +49,6 @@ export const PRESETS = [
   },
   {
     id: 'audit', group: 'General', label: 'View audit log', method: 'GET', path: '/audit',
-  },
-  {
-    id: 'setup',
-    group: 'Sign-in',
-    label: 'Create first admin',
-    method: 'POST',
-    path: '/auth/setup',
-    body: json({ ...admin, name: 'Ada Admin' }),
   },
   {
     id: 'login',

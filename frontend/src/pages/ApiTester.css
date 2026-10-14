@@ -1,23 +1,16 @@
-#root {
-  width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 1.5rem;
-  align-self: flex-start;
-}
-
+/* Styles for the developer API tester at #/tester, scoped so they cannot affect the rest of the app. */
 .api-tester h1 {
   font-size: 1.8em;
   margin: 0 0 1rem;
 }
 
-.layout {
+.api-tester .layout {
   display: grid;
   grid-template-columns: 220px 1fr;
   gap: 1.5rem;
 }
 
-.preset-list h2 {
+.api-tester .preset-list h2 {
   font-size: 0.8em;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -25,11 +18,11 @@
   margin: 1rem 0 0.4rem;
 }
 
-.preset-list h2:first-child {
+.api-tester .preset-list h2:first-child {
   margin-top: 0;
 }
 
-.preset-list button {
+.api-tester .preset-list button {
   display: flex;
   align-items: center;
   gap: 0.5em;
@@ -40,36 +33,36 @@
   font-size: 0.9em;
 }
 
-.preset-list button[aria-pressed='true'] {
+.api-tester .preset-list button[aria-pressed='true'] {
   border-color: #646cff;
 }
 
-.method {
+.api-tester .method {
   min-width: 3.6em;
   font-size: 0.75em;
   font-weight: 700;
 }
 
-.method-GET { color: #2e9d5b; }
-.method-POST { color: #d9a400; }
-.method-PUT { color: #3b82f6; }
-.method-PATCH { color: #8b5cf6; }
-.method-DELETE { color: #e0483e; }
+.api-tester .method-GET { color: #2e9d5b; }
+.api-tester .method-POST { color: #d9a400; }
+.api-tester .method-PUT { color: #3b82f6; }
+.api-tester .method-PATCH { color: #8b5cf6; }
+.api-tester .method-DELETE { color: #e0483e; }
 
-.panels {
+.api-tester .panels {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
   min-width: 0;
 }
 
-.request-form {
+.api-tester .request-form {
   display: flex;
   flex-direction: column;
   gap: 0.8rem;
 }
 
-.request-form label {
+.api-tester .request-form label {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
@@ -78,7 +71,7 @@
 
 .request-form input,
 .request-form select,
-.request-form textarea {
+.api-tester .request-form textarea {
   padding: 0.5em;
   border: 1px solid #8886;
   border-radius: 6px;
@@ -87,42 +80,42 @@
   background: transparent;
 }
 
-.request-form textarea {
+.api-tester .request-form textarea {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.9em;
 }
 
-.row {
+.api-tester .row {
   display: flex;
   gap: 0.8rem;
   align-items: flex-end;
 }
 
-.grow {
+.api-tester .grow {
   flex: 1;
 }
 
-.send-row {
+.api-tester .send-row {
   align-items: center;
 }
 
 /* Six remembered values: wrap onto several lines instead of squeezing into one. */
-.values {
+.api-tester .values {
   flex-wrap: wrap;
 }
 
-.values label {
+.api-tester .values label {
   min-width: 14rem;
 }
 
-.url {
+.api-tester .url {
   flex: 1;
   overflow-wrap: anywhere;
   font-size: 0.85em;
   opacity: 0.8;
 }
 
-.response pre {
+.api-tester .response pre {
   margin: 0;
   padding: 1rem;
   max-height: 420px;
@@ -134,41 +127,41 @@
   overflow-wrap: anywhere;
 }
 
-.response p {
+.api-tester .response p {
   margin: 0 0 0.5rem;
 }
 
-.timer-panel {
+.api-tester .timer-panel {
   padding: 0.8rem 1rem;
   border: 1px solid #8886;
   border-radius: 6px;
 }
 
-.timer-panel h2 {
+.api-tester .timer-panel h2 {
   margin: 0 0 0.4rem;
   font-size: 1rem;
 }
 
-.timer-panel p {
+.api-tester .timer-panel p {
   margin: 0.2rem 0;
 }
 
-.timer-row {
+.api-tester .timer-row {
   align-items: center;
 }
 
-.timer-clock {
+.api-tester .timer-clock {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 2rem;
   font-variant-numeric: tabular-nums;
 }
 
-.ok { color: #2e9d5b; }
-.fail { color: #e0483e; }
-.muted { opacity: 0.7; }
+.api-tester .ok { color: #2e9d5b; }
+.api-tester .fail { color: #e0483e; }
+.api-tester .muted { opacity: 0.7; }
 
 @media (max-width: 800px) {
-  .layout {
+  .api-tester .layout {
     grid-template-columns: 1fr;
   }
 }

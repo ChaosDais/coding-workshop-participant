@@ -62,8 +62,17 @@ public class InMemoryUserRepository implements UserRepository {
     }
 
     @Override
+    public boolean hasAnyUser() {
+        return !users.isEmpty();
+    }
+
+    @Override
     public void setPasswordHash(String id, String passwordHash) {
-        users.computeIfPresent(id, (key, stored) -> new Credentials(stored.user(), passwordHash));
+        users.computeIfPresent(id, (key, stored) -> {
+            User user = stored.user();
+            return new Credentials(new User(user.id(), user.email(), user.name(), user.role(), user.managerId(),
+                    user.jobType(), user.salary(), user.archived(), false), passwordHash);
+        });
     }
 
     @Override

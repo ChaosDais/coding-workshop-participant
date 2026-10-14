@@ -25,7 +25,8 @@ above all who may do what.
 
 The backend is a single Java service, `workshop-service`, deployed as one AWS Lambda function. Every API path is
 handled by the same function, which routes internally. Data lives in PostgreSQL. The frontend is a React app
-(currently an API tester with a live timer panel).
+with a sign-in screen and the admin view; the manager and employee views are still to come, and a developer API
+tester remains at `#/tester`.
 
 ```mermaid
 flowchart LR
@@ -77,9 +78,16 @@ backend/
       services/, models/            unit tests
   _examples/                        workshop templates (not deployed)
 frontend/
-  src/pages/ApiTester.jsx           request builder, remembered ids and tokens, token auto-refresh
-  src/components/                   PresetList, RequestForm, ResponsePanel, TimerPanel
-  src/services/                     apiClient, presets, timer maths (+ Vitest tests)
+  src/App.jsx                       chooses the screen from the signed-in user and the #/ route
+  src/auth/AuthContext.jsx          signed-in user, sign-in/out, password change, token renewal
+  src/pages/                        SignIn, ChangePassword, Projects, ProjectDetail, Employees, AuditLog,
+                                    OtherRole (placeholder for managers and employees), ApiTester (#/tester)
+  src/components/                   NavBar, forms (Project, Milestone, User), Modal, Field, AuditTable,
+                                    StatusBadge, ErrorMessage; PresetList, RequestForm, ResponsePanel and
+                                    TimerPanel belong to the tester
+  src/services/api.js               API client: session storage, bearer token, refresh-and-retry on 401
+  src/utils/                        formatting, project availability, audit descriptions, user search,
+                                    form validation (+ Vitest tests next to each file)
 infra/                              Terraform: Lambda, CloudFront, S3, Aurora, IAM
 bin/                                setup, deploy and dev-environment scripts, dev proxy
 docs/                               workshop guides
@@ -125,7 +133,7 @@ kept in memory between requests.
 
 | Table | Holds | Notes |
 |---|---|---|
-| `users` | Accounts | `role` (ADMIN, MANAGER, EMPLOYEE), `manager_id` (employees only), `job_type`, `salary` (annual), BCrypt `password_hash`, `archived_at` |
+| `users` | Accounts | `role` (ADMIN, MANAGER, EMPLOYEE), `manager_id` (employees only), `job_type`, `salary` (annual), BCrypt `password_hash`, `password_change_required`, `archived_at` |
 | `projects` | Projects | `manager` (user id), `budget`, `status`, `description`, `start_date`/`end_date`, `depends_on` (project ids), `completed_at`, `archived_at` |
 | `milestones` | Milestones of a project, in order | `assigned_employees` (user ids), `depends_on` (milestone ids), `status`, `progress_time` (hours), `completed_at`, `archived_at` |
 | `time_entries` | Logged time and running timers | `source` (MANUAL/TIMER), `hours`, `hourly_rate` and `cost` captured when logged, correction fields; one running timer per user enforced by a unique index |
@@ -144,8 +152,12 @@ kept in memory between requests.
 
 ## Authentication
 
-- **First admin**: `POST /auth/setup` creates the first ADMIN and works only while the `users` table is empty; it
-  takes a table lock, so two simultaneous calls cannot both succeed. On a fresh deployment, call it immediately.
+- **Premade admin**: on a database with no accounts, the first sign-in creates an ADMIN with the email
+  `admin@acme.com` and the password `ChangeMe123!`. `ADMIN_EMAIL` and `ADMIN_PASSWORD` on the Lambda override
+  those defaults. It takes a table lock, so two simultaneous sign-ins cannot create two admins. Because the
+  credentials are documented, the account is created with `passwordChangeRequired`: until it changes its password,
+  the router refuses every route except viewing its own account and changing its password (`403 Change your
+  password before continuing`). There is no sign-up; admins create every other account.
 - **Sign-in**: `POST /auth/login` with email and password returns
   `{accessToken, refreshToken, tokenType: "Bearer", expiresIn: 900, user}`. Emails are case-insensitive. A wrong
   password, an unknown email and an archived account all return the same `401 Invalid email or password`, and an
@@ -162,8 +174,9 @@ kept in memory between requests.
   tokens.
 - **Immediate effect**: every authenticated request reloads the user from the database, so archiving an account
   or changing its role takes effect at once, not when the token expires.
-- **Frontend**: the tester sends the access token on every request and renews both tokens every 10 minutes while
-  signed in, so a long-running timer stays signed in.
+- **Frontend**: the app keeps the session in `sessionStorage` (a reload stays signed in, closing the tab signs out),
+  sends the access token on every request, renews both tokens every 10 minutes, and on a `401` refreshes once and
+  retries. If the refresh fails it returns to the sign-in screen.
 
 ## Authorization
 
@@ -182,11 +195,10 @@ Authorization happens in two layers, so a missing check in one is caught by the 
 | Method & path | Admin | Manager | Employee | Public |
 |---|---|---|---|---|
 | `GET /` | ✓ | ✓ | ✓ | ✓ |
-| `POST /auth/setup` | | | | ✓ while no users exist |
 | `POST /auth/login`, `/auth/refresh`, `/auth/logout` | | | | ✓ |
-| `GET /auth/me` | ✓ | ✓ | ✓ | — |
+| `GET /auth/me` | ✓ | ✓ | ✓ | — (works before a forced password change) |
 | `PUT /auth/me` (own name and email) | ✓ | ✓ | ✓ | — |
-| `POST /auth/password` (own password) | ✓ | ✓ | ✓ | — |
+| `POST /auth/password` (own password) | ✓ | ✓ | ✓ | — (works before a forced password change) |
 | `GET /users` | ✓ (`?archived=true` too) | scoped | scoped | — |
 | `GET /users/{id}` | ✓ | scoped | scoped | — |
 | `POST /users` | ✓ | — | — | — |
@@ -201,6 +213,7 @@ Authorization happens in two layers, so a missing check in one is caught by the 
 | `PUT /projects/{id}` | ✓ | scoped, except manager, description and dependencies | — | — |
 | `DELETE /projects/{id}` (archive) | ✓ | — | — | — |
 | `POST /projects/{id}/restore` | ✓ | — | — | — |
+| `GET /projects/{id}/milestones` (`?archived=true` for archived ones) | ✓, archived projects too | scoped | — | — |
 | `POST /projects/{id}/milestones` | ✓ | scoped | — | — |
 | `PUT /projects/{id}/milestones/{mid}` | ✓ | scoped | — | — |
 | `PUT /projects/{id}/milestones/{mid}/status` | ✓ | scoped | own milestones, `AWAITING_REVIEW` only | — |
@@ -317,11 +330,14 @@ On AWS, CloudFront currently rewrites every 404 into `index.html` with status 20
 ## Audit log
 
 Every change is recorded in `audit_entries` with the acting user's email and details such as the ids involved.
-Reads and rejected requests are not recorded. Admins read the 100 most recent entries at `GET /audit`.
+Reads and rejected requests are not recorded. Admins read them at `GET /audit`, newest first, with optional
+filters: `projectId`, `milestoneId`, `action` (one or more, comma-separated), `from` and `to` (`YYYY-MM-DD`,
+inclusive, UTC), `q` (text in the action, actor or details, ignoring case) and `limit` (default 100, at most 500).
+Entries are timestamped with the same clock as the rest of the service.
 
 | Area | Actions |
 |---|---|
-| Accounts | `first_admin_created`, `user_created`, `user_updated`, `user_archived`, `user_restored`, `employee_moved`, `password_reset`, `password_changed`, `profile_updated` |
+| Accounts | `default_admin_created`, `user_created`, `user_updated`, `user_archived`, `user_restored`, `employee_moved`, `password_reset`, `password_changed`, `profile_updated` |
 | Projects | `project_created`, `project_updated`, `project_archived`, `project_restored` |
 | Milestones | `milestone_added`, `milestone_updated`, `milestone_status_changed`, `milestone_archived` |
 | Time | `time_logged`, `timer_started`, `timer_stopped`, `timer_capped`, `time_corrected` |
@@ -358,7 +374,8 @@ cd frontend && npm test
 | Suite | Covers |
 |---|---|
 | `HandlerTest` | Project and milestone lifecycle, validation messages, CloudFront prefix, base64 bodies, database failures |
-| `AuthTest` | Setup, sign-in, token expiry, refresh rotation and reuse detection, sign-out, password change |
+| `AuthTest` | Premade admin and its forced password change, sign-in, token expiry, refresh rotation and reuse detection, sign-out, password change |
+| `AdminViewTest` | Audit log filters, archived milestones |
 | `UsersTest` | Account creation and validation, moving employees, archiving and lockout, admin guards |
 | `ManagerTest` | Every manager permission, allowed and denied |
 | `EmployeeTest` | Employee visibility, profile edits, review status, time logging, timer and cap, corrections, cost |
@@ -366,7 +383,8 @@ cd frontend && npm test
 | `ProjectDependencyTest` | Project dependencies: blocking, cycles, the chain staying intact, admin-only changes |
 | `PostgresRepositoriesTest` | Every PostgreSQL repository, plus schema upgrades from earlier versions |
 | `PostgresDatabaseTest` | Retrying the connection while a paused Aurora database resumes |
-| `timer.test.js`, `apiClient.test.js` | Timer maths and placeholder filling in the frontend |
+| `utils/*.test.js`, `services/*.test.js` | Frontend helpers: availability, search, validation, audit text, timer maths |
+| `pages/*.test.jsx` | Frontend screens rendered against a fake backend: sign-in and the forced password change, projects, project view, employees |
 
 `TestApp` wires the whole service with in-memory repositories and a controllable clock, and calls it through the Lambda
 entry point with function-URL-shaped events, so the API tests exercise routing and authorization exactly as
@@ -390,7 +408,7 @@ deployed.
 - **Signing secret**: the token signing secret is stored in the database, so read access to the database would
   allow forging tokens.
 - **Not atomic**: a change and its audit entry are written in separate transactions.
-- **Frontend**: it is a developer API tester, not an end-user interface.
+- **Frontend**: only the admin view exists so far; managers and employees see a placeholder.
 - **CloudFront 404s**: on AWS, CloudFront hides API 404s (see [Errors](#errors)).
 - **Memory**: the Lambda runs with 128 MB, the minimum, and BCrypt makes sign-in CPU-heavy. Raise `memory_size` in
   `infra/lambda.tf` if sign-in is slow.
