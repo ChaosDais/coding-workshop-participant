@@ -14,18 +14,19 @@ import java.util.List;
  */
 public record ProjectView(String id, String name, String description, LocalDate startDate, LocalDate endDate,
                          double progressTime, String manager, BigDecimal budget, BigDecimal spent,
-                         CompletionStatus status, Instant completedAt, List<Milestone> milestones) {
+                         CompletionStatus status, Instant completedAt, List<String> dependsOn,
+                         List<Milestone> milestones) {
 
     public static ProjectView full(Project project, BigDecimal spent) {
         return new ProjectView(project.id(), project.name(), project.description(), project.startDate(),
                 project.endDate(), milestoneProgress(project), project.manager(), project.budget(), spent,
-                project.status(), project.completedAt(), project.milestones());
+                project.status(), project.completedAt(), project.dependsOn(), project.milestones());
     }
 
     public static ProjectView forEmployee(Project project) {
         return new ProjectView(project.id(), project.name(), project.description(), project.startDate(),
                 project.endDate(), milestoneProgress(project), project.manager(), null, null, project.status(),
-                project.completedAt(), project.milestones());
+                project.completedAt(), project.dependsOn(), project.milestones());
     }
 
     /** Hours across all the project's active milestones, rounded to hundredths. */

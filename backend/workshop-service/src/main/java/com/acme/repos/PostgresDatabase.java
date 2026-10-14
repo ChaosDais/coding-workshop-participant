@@ -104,6 +104,7 @@ public class PostgresDatabase {
             "ALTER TABLE milestones ADD COLUMN IF NOT EXISTS description TEXT",
             "ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT",
             "ALTER TABLE projects ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ",
+            "ALTER TABLE projects ADD COLUMN IF NOT EXISTS depends_on TEXT[] NOT NULL DEFAULT '{}'",
             "ALTER TABLE milestones ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ",
             "ALTER TABLE milestones ADD COLUMN IF NOT EXISTS depends_on TEXT[] NOT NULL DEFAULT '{}'",
             "ALTER TABLE time_entries ADD COLUMN IF NOT EXISTS corrected_at TIMESTAMPTZ",

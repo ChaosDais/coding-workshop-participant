@@ -214,6 +214,15 @@ public class TimeService {
             throw new ConflictException("This milestone cannot be worked on until the milestones it depends on are"
                     + " complete: " + String.join(", ", blockers));
         }
+        List<String> blockingProjects = project.dependsOn().stream()
+                .map(dependency -> projects.findById(dependency))
+                .filter(found -> found.isEmpty() || found.get().status() != CompletionStatus.COMPLETE)
+                .map(found -> found.map(Project::name).orElse("(archived project)"))
+                .toList();
+        if (!blockingProjects.isEmpty()) {
+            throw new ConflictException("This project cannot be worked on until the projects it depends on are"
+                    + " complete: " + String.join(", ", blockingProjects));
+        }
     }
 
     private static Milestone requireMilestone(Project project, String milestoneId) {

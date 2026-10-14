@@ -16,6 +16,8 @@ import com.acme.repos.UserRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +39,8 @@ import java.util.Set;
  * A project's manager must be an active manager and assigned employees must be active employees; references are
  * checked when they change, so existing ones stay valid if a user is later archived or moved to another team.
  * Dates, completion times and milestone dependencies follow {@link ProjectRules} on every change.
+ * Projects can depend on other projects: only admins set those dependencies, and a project cannot start, nor can
+ * any of its milestones, until every project it depends on is complete.
  */
 public class ProjectService {
     private final ProjectRepository projects;
@@ -119,13 +123,18 @@ public class ProjectService {
         requireActiveUser(project.manager(), Role.MANAGER, "manager");
         project.milestones().forEach(milestone -> requireEmployees(milestone, Set.of(), project.manager()));
         Project created = ProjectRules.apply(null, project, clock.instant());
+        checkProjectDependencies(null, created);
         projects.insert(created);
         audit("project_created", created, null, actor);
         return view(created, actor);
     }
 
-    /** Applies the changes to the project; its milestones are kept unless {@code replaceMilestones} is set. */
-    public ProjectView update(String id, Project changes, boolean replaceMilestones, User actor) {
+    /**
+     * Applies the changes to the project. Its milestones are kept unless {@code replaceMilestones} is set, and its
+     * project dependencies unless {@code replaceDependencies} is set.
+     */
+    public ProjectView update(String id, Project changes, boolean replaceMilestones, boolean replaceDependencies,
+                              User actor) {
         Project existing = requireEditable(id, actor);
         if (!changes.manager().equals(existing.manager())) {
             if (actor.role() != Role.ADMIN) {
@@ -142,6 +151,10 @@ public class ProjectService {
                 throw new ForbiddenException("Only admins can change a project's description");
             }
         }
+        List<String> dependsOn = replaceDependencies ? changes.dependsOn() : existing.dependsOn();
+        if (actor.role() != Role.ADMIN && !dependsOn.equals(existing.dependsOn())) {
+            throw new ForbiddenException("Only admins can change a project's dependencies");
+        }
         if (replaceMilestones) {
             // Checked against the manager the project has after this update.
             changes.milestones().forEach(milestone ->
@@ -149,8 +162,9 @@ public class ProjectService {
         }
         Project updated = ProjectRules.apply(existing, new Project(id, changes.name(), description,
                 changes.startDate(), changes.endDate(), changes.progressTime(), changes.manager(), changes.budget(),
-                changes.status(), replaceMilestones ? changes.milestones() : existing.milestones(), null),
+                changes.status(), replaceMilestones ? changes.milestones() : existing.milestones(), null, dependsOn),
                 clock.instant());
+        checkProjectDependencies(existing, updated);
         save(updated);
         audit("project_updated", updated, null, actor);
         return view(updated, actor);
@@ -159,6 +173,11 @@ public class ProjectService {
     /** Hides the project from the active views; it stays stored and can be restored. */
     public void archive(String id, User actor) {
         Project project = requireEditable(id, actor);
+        List<String> dependents = dependentsOf(id).stream().map(Project::name).toList();
+        if (!dependents.isEmpty()) {
+            throw new ConflictException("Other projects depend on '" + project.name()
+                    + "'; remove those dependencies first: " + String.join(", ", dependents));
+        }
         if (!projects.archive(id)) {
             // Archived by another request between the lookup and the write.
             throw new NotFoundException("Project " + id + " not found");
@@ -184,6 +203,7 @@ public class ProjectService {
         List<Milestone> milestones = new ArrayList<>(project.milestones());
         milestones.add(milestone);
         Project updated = ProjectRules.apply(project, project.withMilestones(milestones), clock.instant());
+        checkProjectDependencies(project, updated);
         save(updated);
         audit("milestone_added", project, milestone.id(), actor);
         return updated.milestones().get(milestones.size() - 1);
@@ -199,6 +219,7 @@ public class ProjectService {
         List<Milestone> milestones = new ArrayList<>(project.milestones());
         milestones.set(index, changed);
         Project updated = ProjectRules.apply(project, project.withMilestones(milestones), clock.instant());
+        checkProjectDependencies(project, updated);
         save(updated);
         audit("milestone_updated", project, milestoneId, actor);
         return updated.milestones().get(index);
@@ -207,7 +228,7 @@ public class ProjectService {
     /**
      * Moves a milestone to a new status. Employees can only send their own milestones to AWAITING_REVIEW,
      * and cannot reopen one that is already COMPLETE; admins and the project's manager can set any status.
-     * Dependencies apply to everyone: a milestone cannot move past TODO until what it depends on is complete.
+     * Dependencies apply to everyone: a milestone cannot move past todo until what it depends on is complete.
      */
     public Milestone changeMilestoneStatus(String projectId, String milestoneId, CompletionStatus status,
                                            User actor) {
@@ -230,8 +251,9 @@ public class ProjectService {
         }
         List<Milestone> milestones = new ArrayList<>(project.milestones());
         milestones.set(index, milestone.withStatus(status, null));
-        Milestone changed = ProjectRules.apply(project, project.withMilestones(milestones), clock.instant())
-                .milestones().get(index);
+        Project updated = ProjectRules.apply(project, project.withMilestones(milestones), clock.instant());
+        checkProjectDependencies(project, updated);
+        Milestone changed = updated.milestones().get(index);
         // Only the status and completion time are written, so progress logged meanwhile is not overwritten.
         if (!projects.setMilestoneStatus(projectId, milestoneId, status, changed.completedAt())) {
             // Archived by another request between the lookup and the write.
@@ -258,6 +280,99 @@ public class ProjectService {
         milestones.remove(index);
         save(project.withMilestones(milestones));
         audit("milestone_archived", project, milestoneId, actor);
+    }
+
+    /**
+     * The rules for dependencies between projects, checked against what changed from {@code before} (null for a
+     * new project) to {@code after}:
+     * <ul>
+     *   <li>dependencies point at other active projects and never form a cycle;</li>
+     *   <li>the project cannot start or complete, and none of its milestones can start, until every project it
+     *       depends on is complete;</li>
+     *   <li>a completed project cannot be reopened while a project depending on it has started.</li>
+     * </ul>
+     */
+    private void checkProjectDependencies(Project before, Project after) {
+        boolean dependenciesChanged = before == null || !before.dependsOn().equals(after.dependsOn());
+        if (dependenciesChanged) {
+            for (String dependency : after.dependsOn()) {
+                if (dependency.equals(after.id())) {
+                    throw new IllegalArgumentException("Project '" + after.name() + "' cannot depend on itself");
+                }
+                if (projects.findById(dependency).isEmpty()) {
+                    throw new IllegalArgumentException("Project '" + after.name()
+                            + "' depends on a project that does not exist or is archived: " + dependency);
+                }
+            }
+            requireNoProjectCycle(after);
+        }
+
+        List<String> incomplete = after.dependsOn().stream()
+                .map(dependency -> projects.findById(dependency))
+                .filter(found -> found.isEmpty() || found.get().status() != CompletionStatus.COMPLETE)
+                .map(found -> found.map(Project::name).orElse("(archived project)"))
+                .toList();
+        if (!incomplete.isEmpty()) {
+            boolean projectStarting = after.started()
+                    && (before == null || before.status() != after.status() || dependenciesChanged);
+            if (projectStarting) {
+                throw new ConflictException("Project '" + after.name() + "' cannot start or complete until the"
+                        + " projects it depends on are complete: " + String.join(", ", incomplete));
+            }
+            boolean milestoneStarting = after.milestones().stream().anyMatch(milestone -> milestone.started()
+                    && (before == null || before.milestones().stream().noneMatch(previous ->
+                            previous.id().equals(milestone.id()) && previous.status() == milestone.status())));
+            if (milestoneStarting) {
+                throw new ConflictException("Milestones of project '" + after.name() + "' cannot start until the"
+                        + " projects it depends on are complete: " + String.join(", ", incomplete));
+            }
+        }
+
+        boolean reopened = before != null && before.status() == CompletionStatus.COMPLETE
+                && after.status() != CompletionStatus.COMPLETE;
+        if (reopened) {
+            List<String> startedDependents = dependentsOf(after.id()).stream()
+                    .filter(Project::started).map(Project::name).toList();
+            if (!startedDependents.isEmpty()) {
+                throw new ConflictException("Project '" + after.name() + "' cannot be reopened while projects that"
+                        + " depend on it have started: " + String.join(", ", startedDependents));
+            }
+        }
+    }
+
+    /** Follows dependencies from the changed project through every active project, looking for a way back. */
+    private void requireNoProjectCycle(Project changed) {
+        Map<String, Project> byId = new HashMap<>();
+        projects.findAll(false).forEach(project -> byId.put(project.id(), project));
+        byId.put(changed.id(), changed);
+        List<String> path = new ArrayList<>(List.of(changed.id()));
+        if (reachesBack(changed.id(), changed.dependsOn(), byId, path, new HashSet<>())) {
+            throw new IllegalArgumentException("Project dependencies cannot form a cycle: "
+                    + String.join(" → ", path.stream().map(id -> byId.get(id).name()).toList()));
+        }
+    }
+
+    private static boolean reachesBack(String start, List<String> next, Map<String, Project> byId, List<String> path,
+                                       Set<String> visited) {
+        for (String id : next) {
+            path.add(id);
+            if (id.equals(start)) {
+                return true;
+            }
+            Project project = byId.get(id);
+            if (project != null && visited.add(id) && reachesBack(start, project.dependsOn(), byId, path, visited)) {
+                return true;
+            }
+            path.remove(path.size() - 1);
+        }
+        return false;
+    }
+
+    /** Active projects that list this one in their dependsOn. */
+    private List<Project> dependentsOf(String projectId) {
+        return projects.findAll(false).stream()
+                .filter(project -> project.dependsOn().contains(projectId))
+                .toList();
     }
 
     static int requireMilestoneIndex(Project project, String milestoneId) {

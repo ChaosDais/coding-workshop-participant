@@ -31,7 +31,7 @@ public record Milestone(String id, String name, String description, LocalDate st
                         .filter(dependency -> !dependency.isEmpty()).distinct().toList();
     }
 
-    /** Whether work on the milestone has begun: anything past TODO. */
+    /** Whether work on the milestone has begun: anything past todo. */
     public boolean started() {
         return status != CompletionStatus.TODO;
     }

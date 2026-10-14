@@ -64,9 +64,9 @@ class PostgresRepositoriesTest {
                         LocalDate.of(2026, 3, 1), 0, List.of(), CompletionStatus.TODO, null, List.of("m1"));
                 Project project = new Project("p1", "Apollo", "Crewed lunar landing", LocalDate.of(2026, 1, 1),
                         LocalDate.of(2026, 12, 31), 12.5, "alice", new BigDecimal("50000.75"), CompletionStatus.TODO,
-                        List.of(design, build), null);
+                        List.of(design, build), null, null);
                 Project earlier = new Project("p2", "Mercury", null, LocalDate.of(2025, 6, 1), LocalDate.of(2025, 9, 1),
-                        0, "dave", BigDecimal.ZERO, CompletionStatus.COMPLETE, List.of(), null);
+                        0, "dave", BigDecimal.ZERO, CompletionStatus.COMPLETE, List.of(), null, List.of("p1"));
 
                 projects.insert(project);
                 projects.insert(earlier);
@@ -75,16 +75,16 @@ class PostgresRepositoriesTest {
                 assertEquals(List.of(earlier, project), projects.findAll(false));
 
                 Project updated = new Project("p1", "Gemini", null, project.startDate(), project.endDate(), 20, "erin",
-                        new BigDecimal("1.00"), CompletionStatus.COMPLETE, List.of(build), null);
+                        new BigDecimal("1.00"), CompletionStatus.COMPLETE, List.of(build), null, null);
                 assertTrue(projects.replace(updated));
                 assertEquals(updated, projects.findById("p1").orElseThrow());
                 assertFalse(projects.replace(new Project("missing", "n", null, project.startDate(),
-                        project.endDate(), 0, "m", BigDecimal.ONE, null, null, null)));
+                        project.endDate(), 0, "m", BigDecimal.ONE, null, null, null, null)));
 
                 // The milestone left out of the update is archived, not deleted, and its id cannot be reused.
                 assertEquals(1, count(admin, schema, "milestones WHERE id = 'm1' AND archived_at IS NOT NULL"));
                 Project reusingId = new Project("p1", "Gemini", null, project.startDate(), project.endDate(), 20,
-                        "erin", new BigDecimal("1.00"), CompletionStatus.COMPLETE, List.of(build, design), null);
+                        "erin", new BigDecimal("1.00"), CompletionStatus.COMPLETE, List.of(build, design), null, null);
                 assertThrows(ConflictException.class, () -> projects.replace(reusingId));
                 assertEquals(updated, projects.findById("p1").orElseThrow());
 
@@ -206,7 +206,7 @@ class PostgresRepositoriesTest {
                 Milestone milestone = new Milestone("m1", "Design", null, LocalDate.of(2026, 1, 1),
                         LocalDate.of(2026, 2, 1), 1.0, List.of("e1"), CompletionStatus.IN_PROGRESS, null, null);
                 projects.insert(new Project("p1", "Apollo", null, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
-                        0, "m", BigDecimal.TEN, null, List.of(milestone), null));
+                        0, "m", BigDecimal.TEN, null, List.of(milestone), null, null));
                 TimeEntryRepository entries = new PostgresTimeEntryRepository(database);
                 Instant start = Instant.parse("2026-10-14T09:00:00Z");
 

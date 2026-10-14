@@ -238,6 +238,16 @@ export const PRESETS = [
     capture: { projectId: 'id' },
   },
   {
+    id: 'create-dependent-project',
+    group: 'Projects',
+    label: 'Create project that depends on it',
+    method: 'POST',
+    path: '/projects',
+    body: json({
+      ...sampleProject, name: 'Gemini', status: 'TODO', dependsOn: ['{projectId}'],
+    }),
+  },
+  {
     id: 'get-project', group: 'Projects', label: 'Get project', method: 'GET', path: '/projects/{projectId}',
   },
   {

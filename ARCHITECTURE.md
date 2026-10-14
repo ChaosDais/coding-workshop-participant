@@ -126,7 +126,7 @@ kept in memory between requests.
 | Table | Holds | Notes |
 |---|---|---|
 | `users` | Accounts | `role` (ADMIN, MANAGER, EMPLOYEE), `manager_id` (employees only), `job_type`, `salary` (annual), BCrypt `password_hash`, `archived_at` |
-| `projects` | Projects | `manager` (user id), `budget`, `status`, `description`, `start_date`/`end_date`, `completed_at`, `archived_at` |
+| `projects` | Projects | `manager` (user id), `budget`, `status`, `description`, `start_date`/`end_date`, `depends_on` (project ids), `completed_at`, `archived_at` |
 | `milestones` | Milestones of a project, in order | `assigned_employees` (user ids), `depends_on` (milestone ids), `status`, `progress_time` (hours), `completed_at`, `archived_at` |
 | `time_entries` | Logged time and running timers | `source` (MANUAL/TIMER), `hours`, `hourly_rate` and `cost` captured when logged, correction fields; one running timer per user enforced by a unique index |
 | `refresh_tokens` | Refresh tokens | SHA-256 hash only, `expires_at`, `revoked_at` |
@@ -198,7 +198,7 @@ Authorization happens in two layers, so a missing check in one is caught by the 
 | `GET /projects` | ✓ (`?archived=true` too) | scoped | scoped | — |
 | `GET /projects/{id}` | ✓ | scoped | scoped | — |
 | `POST /projects` | ✓ | — | — | — |
-| `PUT /projects/{id}` | ✓ | scoped, except manager and description | — | — |
+| `PUT /projects/{id}` | ✓ | scoped, except manager, description and dependencies | — | — |
 | `DELETE /projects/{id}` (archive) | ✓ | — | — | — |
 | `POST /projects/{id}/restore` | ✓ | — | — | — |
 | `POST /projects/{id}/milestones` | ✓ | scoped | — | — |
@@ -221,7 +221,7 @@ A missing or invalid token returns `401`; a signed-in user without permission ge
 | Projects visible | Active projects they manage | Active projects where they are assigned to at least one milestone |
 | Milestones visible | All in their projects | All in those projects |
 | Users visible | Active employees whose manager they are | Their manager, and active employees sharing that manager (themselves included) |
-| Project changes | Everything except the `manager` and `description`; cannot create, archive or restore | None |
+| Project changes | Everything except `manager`, `description` and `dependsOn`; cannot create, archive or restore | None |
 | Milestone changes | Add, edit, archive and set any status in their projects | Only `AWAITING_REVIEW`, only on milestones assigned to them, never on a COMPLETE one |
 | Time | See hours logged on their projects | Log time and run a timer on their own milestones; see their own entries |
 | Archived records | Not visible | Not visible |
@@ -271,14 +271,25 @@ All of these live in `services/ProjectRules.java`, which every project and miles
 - Rules are checked against what a request changes, so records saved before a rule existed stay readable and
   editable.
 
+### Project dependencies
+Checked in `services/ProjectService.java`, since they span projects:
+
+- A project's `dependsOn` lists other **active** projects. Self-dependencies and cycles across projects are rejected.
+- Only admins set or change it. A project update that leaves `dependsOn` out keeps the existing dependencies; a
+  manager may repeat them unchanged but gets `403` for any change.
+- A project cannot leave TODO until every project it depends on is COMPLETE. While it is blocked, none of its
+  milestones can start and no time can be logged on it.
+- A completed project cannot be reopened while a project depending on it has started, and a project others depend
+  on cannot be archived.
+
 ### Time and cost
 - Employees log hours by hand (more than 0, at most 24 per entry) or with a timer.
 - **One milestone at a time**: one running timer per employee, enforced by the database, and no manual hours
   while a timer runs.
 - **8-hour cap**: a timer covers at most one workday. A timer stopped late logs 8.00 hours. A forgotten timer is
   closed at 8 hours the next time its owner looks at, starts or logs time (audited as `timer_capped`).
-- **Where time can be logged**: only on milestones the employee is assigned to, that are not COMPLETE, and whose
-  dependencies are all complete.
+- **Where time can be logged**: only on milestones the employee is assigned to, that are not COMPLETE, whose
+  dependencies are all complete, and whose project's dependencies are all complete.
 - **Progress**: logged hours are added to the milestone's `progressTime` inside the database, in the same
   transaction as the entry, so concurrent requests cannot lose hours.
 - **Cost**: hours × hourly rate, where hourly rate = annual salary ÷ 2,080 (40 hours × 52 weeks). The rate is
@@ -351,7 +362,8 @@ cd frontend && npm test
 | `UsersTest` | Account creation and validation, moving employees, archiving and lockout, admin guards |
 | `ManagerTest` | Every manager permission, allowed and denied |
 | `EmployeeTest` | Employee visibility, profile edits, review status, time logging, timer and cap, corrections, cost |
-| `IntegrityTest` | Completion times, frozen dates, date ranges, dependencies |
+| `IntegrityTest` | Completion times, frozen dates, date ranges, milestone dependencies |
+| `ProjectDependencyTest` | Project dependencies: blocking, cycles, the chain staying intact, admin-only changes |
 | `PostgresRepositoriesTest` | Every PostgreSQL repository, plus schema upgrades from earlier versions |
 | `PostgresDatabaseTest` | Retrying the connection while a paused Aurora database resumes |
 | `timer.test.js`, `apiClient.test.js` | Timer maths and placeholder filling in the frontend |

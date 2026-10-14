@@ -25,7 +25,8 @@ import java.util.Optional;
  */
 public class PostgresProjectRepository implements ProjectRepository {
     private static final String PROJECT_COLUMNS =
-            "id, name, start_date, end_date, progress_time, manager, budget, status, description, completed_at";
+            "id, name, start_date, end_date, progress_time, manager, budget, status, description, completed_at,"
+                    + " depends_on";
     private static final String MILESTONE_COLUMNS =
             "project_id, id, name, start_date, end_date, progress_time, assigned_employees, status, description,"
                     + " completed_at, depends_on";
@@ -40,7 +41,7 @@ public class PostgresProjectRepository implements ProjectRepository {
     public void insert(Project project) {
         database.run(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
-                    "INSERT INTO projects (" + PROJECT_COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                    "INSERT INTO projects (" + PROJECT_COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
                 statement.setString(1, project.id());
                 statement.setString(2, project.name());
                 statement.setObject(3, project.startDate());
@@ -51,6 +52,7 @@ public class PostgresProjectRepository implements ProjectRepository {
                 statement.setString(8, project.status().name());
                 statement.setString(9, project.description());
                 statement.setObject(10, utc(project.completedAt()));
+                statement.setArray(11, connection.createArrayOf("text", project.dependsOn().toArray()));
                 statement.executeUpdate();
             }
             saveMilestones(connection, project);
@@ -108,7 +110,7 @@ public class PostgresProjectRepository implements ProjectRepository {
         return database.run(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
                     "UPDATE projects SET name = ?, start_date = ?, end_date = ?, progress_time = ?, manager = ?,"
-                            + " budget = ?, status = ?, description = ?, completed_at = ?"
+                            + " budget = ?, status = ?, description = ?, completed_at = ?, depends_on = ?"
                             + " WHERE id = ? AND archived_at IS NULL")) {
                 statement.setString(1, project.name());
                 statement.setObject(2, project.startDate());
@@ -119,7 +121,8 @@ public class PostgresProjectRepository implements ProjectRepository {
                 statement.setString(7, project.status().name());
                 statement.setString(8, project.description());
                 statement.setObject(9, utc(project.completedAt()));
-                statement.setString(10, project.id());
+                statement.setArray(10, connection.createArrayOf("text", project.dependsOn().toArray()));
+                statement.setString(11, project.id());
                 if (statement.executeUpdate() == 0) {
                     return false;
                 }
@@ -258,7 +261,8 @@ public class PostgresProjectRepository implements ProjectRepository {
                 row.getBigDecimal("budget"),
                 CompletionStatus.valueOf(row.getString("status")),
                 milestones,
-                instant(row, "completed_at"));
+                instant(row, "completed_at"),
+                List.of((String[]) row.getArray("depends_on").getArray()));
     }
 
     private static OffsetDateTime utc(Instant instant) {

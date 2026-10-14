@@ -23,7 +23,7 @@ import java.util.Optional;
  *       neither can the dates of a milestone that stays complete. A change that reopens it may also move them.</li>
  *   <li>Milestone dates fall within the project's dates.</li>
  *   <li>Dependencies point at other milestones of the same project and never form a cycle.</li>
- *   <li>A milestone cannot start (move past TODO) or complete until everything it depends on is complete, and a
+ *   <li>A milestone cannot start (move past todo) or complete until everything it depends on is complete, and a
  *       completed milestone cannot be reopened while something depending on it has started.</li>
  * </ul>
  */

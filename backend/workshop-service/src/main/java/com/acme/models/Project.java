@@ -7,16 +7,18 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
 /**
  * A blank id is replaced with a generated one; progressTime is in hours; the description is optional free text.
  * manager holds a user id. completedAt is set by the server when the project becomes COMPLETE.
+ * dependsOn holds the ids of other projects that must be complete before this one starts.
  */
 public record Project(String id, String name, String description, LocalDate startDate, LocalDate endDate,
                       double progressTime, String manager, BigDecimal budget, CompletionStatus status,
-                      List<Milestone> milestones, Instant completedAt) {
+                      List<Milestone> milestones, Instant completedAt, List<String> dependsOn) {
     public Project {
         id = id == null || id.isBlank() ? UUID.randomUUID().toString() : id.trim();
         name = Checks.text(name, "name");
@@ -36,15 +38,23 @@ public record Project(String id, String name, String description, LocalDate star
                 throw new IllegalArgumentException("Duplicate milestone id: " + milestone.id());
             }
         }
+        dependsOn = dependsOn == null ? List.of()
+                : dependsOn.stream().filter(Objects::nonNull).map(String::trim)
+                        .filter(dependency -> !dependency.isEmpty()).distinct().toList();
+    }
+
+    /** Whether work on the project has begun: anything past todo. */
+    public boolean started() {
+        return status != CompletionStatus.TODO;
     }
 
     public Project withMilestones(List<Milestone> newMilestones) {
         return new Project(id, name, description, startDate, endDate, progressTime, manager, budget, status,
-                newMilestones, completedAt);
+                newMilestones, completedAt, dependsOn);
     }
 
     public Project withCompletedAt(Instant newCompletedAt) {
         return new Project(id, name, description, startDate, endDate, progressTime, manager, budget, status,
-                milestones, newCompletedAt);
+                milestones, newCompletedAt, dependsOn);
     }
 }

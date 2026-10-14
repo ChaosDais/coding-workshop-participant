@@ -42,10 +42,11 @@ public class ProjectController implements Controller {
                         service.restore(request.param("id"), request.user())));
     }
 
-    /** A body without a milestones field leaves the project's milestones as they are. */
+    /** A body without a milestones or dependsOn field leaves the project's milestones or dependencies as they are. */
     private ApiResponse update(ApiRequest request) {
         boolean replaceMilestones = request.json().has("milestones");
+        boolean replaceDependencies = request.json().has("dependsOn");
         return ApiResponse.ok(service.update(request.param("id"), request.body(Project.class), replaceMilestones,
-                request.user()));
+                replaceDependencies, request.user()));
     }
 }
