@@ -73,6 +73,34 @@ describe('workload page', () => {
     expect(screen.getByRole('region', { name: 'Olu Other' })).toBeTruthy();
   });
 
+  it('sorts the charts by any figure, ascending or descending', async () => {
+    const user = userEvent.setup();
+    renderAs({ id: 'admin', name: 'Ada', role: 'ADMIN' });
+    await screen.findByRole('region', { name: 'Eli Employee' });
+    const order = () => [...document.querySelectorAll('.workload-card')].map((card) => card.getAttribute('aria-label'));
+    const toggle = () => screen.getByRole('button', { name: /^Sort order/ });
+
+    // Workloads: Eli 20 h (10 logged, 50%), Dana 10 h (12 logged, 120%), Olu 8 h (none logged, 0%).
+    expect(order()).toEqual(['Dana Designer', 'Eli Employee', 'Olu Other']);
+    await user.click(toggle());
+    expect(order()).toEqual(['Olu Other', 'Eli Employee', 'Dana Designer']);
+
+    // Picking a figure starts from its natural direction: the largest workload first.
+    await user.selectOptions(screen.getByLabelText('Sort by'), 'workload');
+    expect(toggle().textContent).toBe('↓ Descending');
+    expect(order()).toEqual(['Eli Employee', 'Dana Designer', 'Olu Other']);
+    await user.click(toggle());
+    expect(order()).toEqual(['Olu Other', 'Dana Designer', 'Eli Employee']);
+
+    await user.selectOptions(screen.getByLabelText('Sort by'), 'done');
+    expect(order()).toEqual(['Olu Other', 'Eli Employee', 'Dana Designer']);
+    await user.selectOptions(screen.getByLabelText('Sort by'), 'remaining');
+    expect(order()).toEqual(['Eli Employee', 'Olu Other', 'Dana Designer']);
+    // The summary table follows the same order.
+    expect(screen.getAllByRole('row').slice(1).map((row) => row.cells[0].textContent))
+      .toEqual(['Eli Employee', 'Olu Other', 'Dana Designer']);
+  });
+
   it('shows managers only their own team', async () => {
     renderAs({ id: 'm1', name: 'Morgan Manager', role: 'MANAGER' });
     expect(await screen.findByRole('heading', { name: 'Team Workload' })).toBeTruthy();

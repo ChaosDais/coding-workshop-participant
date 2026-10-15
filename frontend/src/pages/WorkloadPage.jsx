@@ -11,12 +11,28 @@ import {
   RANGES, dayOf, niceMax, progressSeries, rangeDays,
 } from '../utils/workload.js';
 
+/** What the charts can be sorted by, and the direction each starts in when picked. */
 const SORTS = [
-  { value: 'name', label: 'Name' },
-  { value: 'workload', label: 'Largest workload' },
-  { value: 'remaining', label: 'Most remaining' },
-  { value: 'done', label: 'Least done' },
+  { value: 'name', label: 'Name', direction: 'asc' },
+  { value: 'workload', label: 'Workload', direction: 'desc' },
+  { value: 'logged', label: 'Logged', direction: 'desc' },
+  { value: 'remaining', label: 'Remaining', direction: 'desc' },
+  { value: 'done', label: '% done', direction: 'asc' },
 ];
+
+/**
+ * Orders two rows by the chosen field, then by name so ties keep a stable order.
+ * @param {string} sort A SORTS value.
+ * @param {'asc'|'desc'} direction Ascending or descending.
+ * @returns {Function} A comparator for Array.prototype.sort.
+ */
+function compareRows(sort, direction) {
+  const byName = (a, b) => a.person.name.localeCompare(b.person.name);
+  return (a, b) => {
+    const primary = sort === 'name' ? byName(a, b) : (a[sort] ?? -1) - (b[sort] ?? -1);
+    return (direction === 'desc' ? -primary : primary) || byName(a, b);
+  };
+}
 
 async function loadWorkload() {
   const [projects, users, daily] = await Promise.all([projectsApi.list(false), usersApi.list(false), timeApi.daily()]);
@@ -35,6 +51,11 @@ function WorkloadPage() {
   const { data, error, loading, reload } = useLoader(useCallback(loadWorkload, []));
   const [range, setRange] = useState(28);
   const [sort, setSort] = useState('name');
+  const [direction, setDirection] = useState('asc');
+  const chooseSort = (value) => {
+    setSort(value);
+    setDirection(SORTS.find((option) => option.value === value).direction);
+  };
   const [search, setSearch] = useState('');
   const [managerId, setManagerId] = useState('');
 
@@ -71,18 +92,7 @@ function WorkloadPage() {
   const visible = rows
     .filter((row) => !needle || row.person.name.toLowerCase().includes(needle) || (row.person.jobType ?? '').toLowerCase().includes(needle))
     .filter((row) => !managerId || row.person.managerId === managerId)
-    .sort((a, b) => {
-      if (sort === 'workload') {
-        return b.workload - a.workload;
-      }
-      if (sort === 'remaining') {
-        return b.remaining - a.remaining;
-      }
-      if (sort === 'done') {
-        return (a.done ?? Infinity) - (b.done ?? Infinity);
-      }
-      return a.person.name.localeCompare(b.person.name);
-    });
+    .sort(compareRows(sort, direction));
   const charted = visible.filter((row) => row.workload > 0);
   const without = visible.filter((row) => row.workload === 0);
   const maxHours = niceMax(Math.max(0, ...charted.map((row) => Math.max(row.workload, row.logged))));
@@ -119,10 +129,19 @@ function WorkloadPage() {
         </label>
         <label htmlFor="workload-sort">
           Sort by
-          <select id="workload-sort" value={sort} onChange={(event) => setSort(event.target.value)}>
+          <select id="workload-sort" value={sort} onChange={(event) => chooseSort(event.target.value)}>
             {SORTS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
+        <button
+          type="button"
+          className="sort-direction"
+          onClick={() => setDirection((current) => (current === 'asc' ? 'desc' : 'asc'))}
+          aria-label={`Sort order: ${direction === 'asc' ? 'ascending' : 'descending'}. Switch to ${direction === 'asc' ? 'descending' : 'ascending'}`}
+          title="Switch the sort order"
+        >
+          {direction === 'asc' ? '↑ Ascending' : '↓ Descending'}
+        </button>
       </div>
 
       <ErrorMessage error={error} onRetry={reload} />
