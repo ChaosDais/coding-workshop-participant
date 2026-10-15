@@ -40,6 +40,9 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+/** Lookups inside the project table, since project names also appear in the overview above it. */
+const inTable = () => within(screen.getByRole('table'));
+
 function renderPage() {
   return render(<AuthProvider><ProjectsPage /></AuthProvider>);
 }
@@ -47,18 +50,28 @@ function renderPage() {
 describe('projects page', () => {
   it('lists current projects with status, manager, progress and availability', async () => {
     renderPage();
-    const build = (await screen.findByText('Build')).closest('tr');
+    const build = (await within(await screen.findByRole('table')).findByText('Build')).closest('tr');
     expect(within(build).getByText('TODO')).toBeTruthy();
     expect(within(build).getByText('Morgan Manager')).toBeTruthy();
     expect(within(build).getByText('12 h 30 min')).toBeTruthy();
     expect(within(build).getByText('Blocked by Design')).toBeTruthy();
-    expect(within(screen.getByText('Design').closest('tr')).getByText('Available')).toBeTruthy();
-    expect(screen.queryByText('Pilot')).toBeNull();
+    expect(within(inTable().getByText('Design').closest('tr')).getByText('Available')).toBeTruthy();
+    expect(inTable().queryByText('Pilot')).toBeNull();
+  });
+
+  it('opens with an overview of status and pain points for the projects shown', async () => {
+    renderPage();
+    const summary = await screen.findByRole('region', { name: 'Overview' });
+    expect(within(summary).getByRole('heading', { name: 'Project status' })).toBeTruthy();
+    expect(within(summary).getByRole('heading', { name: 'Needs attention' })).toBeTruthy();
+    // Build waits on Design, which is not complete, so it is listed as blocked once past its start date.
+    expect(within(summary).getByText(/blocked project/)).toBeTruthy();
+    expect(within(summary).getByRole('img', { name: 'COMPLETE: 1 project' })).toBeTruthy();
   });
 
   it('shows each project start and expected end date', async () => {
     renderPage();
-    const build = (await screen.findByText('Build')).closest('tr');
+    const build = (await within(await screen.findByRole('table')).findByText('Build')).closest('tr');
     expect(within(build).getByText('Feb 1, 2026')).toBeTruthy();
     expect(within(build).getByText('Jun 30, 2026')).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Expected end' })).toBeTruthy();
@@ -66,8 +79,8 @@ describe('projects page', () => {
 
   it('hides completed projects until asked, then shows them greyed out at the bottom', async () => {
     renderPage();
-    await screen.findByText('Build');
-    expect(screen.queryByText('Launch prep')).toBeNull();
+    await screen.findByRole('table');
+    expect(inTable().queryByText('Launch prep')).toBeNull();
 
     await userEvent.click(screen.getByLabelText('Show completed projects'));
     const rows = screen.getAllByRole('row').slice(1);
@@ -79,28 +92,28 @@ describe('projects page', () => {
 
   it('searches and filters by status and manager', async () => {
     renderPage();
-    await screen.findByText('Build');
+    await screen.findByRole('table');
 
     await userEvent.type(screen.getByLabelText('Search'), 'buil');
     expect(screen.getAllByRole('row')).toHaveLength(2);
     await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
 
     await userEvent.selectOptions(screen.getByLabelText('Status'), 'COMPLETE');
-    expect(screen.getByText('Launch prep')).toBeTruthy();
-    expect(screen.queryByText('Build')).toBeNull();
+    expect(inTable().getByText('Launch prep')).toBeTruthy();
+    expect(inTable().queryByText('Build')).toBeNull();
     await userEvent.selectOptions(screen.getByLabelText('Status'), '');
 
     await userEvent.selectOptions(screen.getByLabelText('Manager'), 'm1');
-    expect(screen.getByText('Build')).toBeTruthy();
+    expect(inTable().getByText('Build')).toBeTruthy();
     await userEvent.selectOptions(screen.getByLabelText('Manager'), 'm2');
     expect(screen.getByText(/No projects match these filters/)).toBeTruthy();
   });
 
   it('shows archived projects on request', async () => {
     renderPage();
-    await screen.findByText('Build');
+    await screen.findByRole('table');
     await userEvent.click(screen.getByLabelText('Show archived projects'));
-    const pilot = screen.getByText('Pilot').closest('tr');
+    const pilot = inTable().getByText('Pilot').closest('tr');
     expect(within(pilot).getByText('Archived')).toBeTruthy();
   });
 
@@ -153,9 +166,35 @@ describe('projects page', () => {
     confirm.mockRestore();
   });
 
+  it('shows projects in pages of 10, 50 or 100, starting again from page 1 when the filters change', async () => {
+    const many = Array.from({ length: 23 }, (_, index) => project(`p${index + 1}`, `Project ${String(index + 1).padStart(2, '0')}`, 'IN_PROGRESS'));
+    fakeBackend({
+      'GET /projects': many, 'GET /projects?archived=true': [], 'GET /users': [manager], 'GET /users?archived=true': [],
+    });
+    renderPage();
+    await screen.findByRole('table');
+    const names = () => inTable().getAllByRole('button', { name: /^Project \d+$/ }).map((button) => button.textContent);
+    expect(screen.getByText('Showing 1–10 of 23 projects')).toBeTruthy();
+    expect(names()).toHaveLength(10);
+
+    const top = () => screen.getByRole('navigation', { name: 'Project pages, top' });
+    await userEvent.click(within(top()).getByRole('button', { name: 'Last page' }));
+    expect(screen.getByText('Showing 21–23 of 23 projects')).toBeTruthy();
+    expect(names()).toEqual(['Project 21', 'Project 22', 'Project 23']);
+    expect(screen.getByRole('navigation', { name: 'Project pages, bottom' })).toBeTruthy();
+
+    await userEvent.type(screen.getByLabelText('Search'), '2');
+    expect(screen.getByText(/^Showing 1–/)).toBeTruthy();
+
+    await userEvent.clear(screen.getByLabelText('Search'));
+    await userEvent.selectOptions(screen.getByLabelText('Per page'), '50');
+    expect(names()).toHaveLength(23);
+    expect(screen.queryByRole('navigation', { name: 'Project pages, top' })).toBeNull();
+  });
+
   it('validates a new project before creating it', async () => {
     renderPage();
-    await screen.findByText('Build');
+    await screen.findByRole('table');
     await userEvent.click(screen.getByRole('button', { name: 'New Project' }));
     const dialog = screen.getByRole('dialog', { name: 'New Project' });
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save project' }));

@@ -4,8 +4,16 @@ import Field from './Field.jsx';
 import ErrorMessage from './ErrorMessage.jsx';
 import { STATUSES, statusLabel } from '../utils/format.js';
 import {
-  compact, dateRange, nonNegativeNumber, required,
+  compact, dateRange, endBeforeDependents, expectedHoursFit, nonNegativeNumber, required, startAfterDependencies,
+  possibleHours, startNotPast,
 } from '../utils/validation.js';
+import { dayOf } from '../utils/workload.js';
+
+/** Today, or the project's start if that is later; the project's start when it has already ended. */
+function firstFreeDay(project) {
+  const today = dayOf(new Date());
+  return project.startDate < today && today <= project.endDate ? today : project.startDate;
+}
 
 const EMPTY = {
   name: '', description: '', startDate: '', endDate: '', progressTime: '0', expectedHours: '', status: 'TODO',
@@ -36,7 +44,10 @@ function MilestoneForm({
     progressTime: String(milestone.progressTime),
     expectedHours: milestone.expectedHours === undefined || milestone.expectedHours === null ? ''
       : String(milestone.expectedHours),
-  } : { ...EMPTY, startDate: project.startDate, endDate: project.endDate }));
+  } : {
+    // A new milestone starts today at the earliest, since it cannot start in the past.
+    ...EMPTY, startDate: firstFreeDay(project), endDate: project.endDate,
+  }));
   const [errors, setErrors] = useState({});
   const [submitError, setSubmitError] = useState();
   const [saving, setSaving] = useState(false);
@@ -56,10 +67,18 @@ function MilestoneForm({
     if (!range.end && values.endDate > project.endDate) {
       range.end = `Must be on or before the project's end (${project.endDate})`;
     }
+    const others = milestones.filter((other) => other.id !== milestone?.id);
+    range.start = range.start
+      ?? startNotPast(values.startDate, milestone?.startDate, dayOf(new Date()))
+      ?? startAfterDependencies(values.startDate, others.filter((other) => values.dependsOn.includes(other.id)));
+    if (!range.end && milestone && values.endDate !== milestone.endDate) {
+      range.end = endBeforeDependents(values.endDate, others.filter((other) => other.dependsOn.includes(milestone.id)));
+    }
     const found = compact({
       name: required(values.name, 'Name'),
       progressTime: nonNegativeNumber(values.progressTime, 'Progress'),
-      expectedHours: nonNegativeNumber(values.expectedHours, 'Expected hours', { optional: true }),
+      expectedHours: nonNegativeNumber(values.expectedHours, 'Expected hours', { optional: true })
+        ?? expectedHoursFit(values.expectedHours, values.startDate, values.endDate, values.assignedEmployees.length, 'assigned employees'),
       ...range,
     });
     setErrors(found);
@@ -116,7 +135,7 @@ function MilestoneForm({
           <Field id="milestone-progress" label="Progress (hours)" error={errors.progressTime}>
             {(props) => <input id={props.id} type="number" min="0" step="0.25" value={values.progressTime} onChange={set('progressTime')} aria-invalid={props.invalid} aria-describedby={props.describedBy} />}
           </Field>
-          <Field id="milestone-expected" label="Expected hours" error={errors.expectedHours}>
+          <Field id="milestone-expected" label="Expected hours" error={errors.expectedHours} hint={values.startDate && values.endDate >= values.startDate ? `At most ${possibleHours(values.startDate, values.endDate, values.assignedEmployees.length)} h for these dates and ${Math.max(1, values.assignedEmployees.length) === 1 ? 'one person' : `${values.assignedEmployees.length} people`}` : undefined}>
             {(props) => <input id={props.id} type="number" min="0" step="0.5" value={values.expectedHours} onChange={set('expectedHours')} aria-invalid={props.invalid} aria-describedby={props.describedBy} />}
           </Field>
           <Field id="milestone-status" label="Status">

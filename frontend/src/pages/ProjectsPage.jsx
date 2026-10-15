@@ -5,36 +5,44 @@ import ErrorMessage from '../components/ErrorMessage.jsx';
 import Loading from '../components/Loading.jsx';
 import HoursProgress from '../components/HoursProgress.jsx';
 import Modal from '../components/Modal.jsx';
+import Overview from '../components/Overview.jsx';
+import Pagination from '../components/Pagination.jsx';
 import ProjectForm from '../components/ProjectForm.jsx';
 import ProjectPreview from '../components/ProjectPreview.jsx';
 import { ChevronIcon, MagnifierIcon } from '../components/Icons.jsx';
 import StatusAge from '../components/StatusAge.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
-import Workload from '../components/Workload.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useLoader } from '../hooks/useLoader.js';
 import { useToggleSet } from '../hooks/useToggleSet.js';
 import { navigate } from '../hooks/useHashRoute.js';
+import { useSettings } from '../settings/SettingsContext.jsx';
 import { projectsApi } from '../services/api.js';
 import { loadProjectsAndPeople } from '../services/projectData.js';
-import { availability, projectRows, workloadByEmployee } from '../utils/projects.js';
+import { employeeOverview, overview } from '../utils/overview.js';
+import { availability, projectRows } from '../utils/projects.js';
+import { dayOf } from '../utils/workload.js';
 import {
   STATUSES, formatDate, formatHours, formatTimestamp, statusLabel,
 } from '../utils/format.js';
 import { byId } from '../utils/users.js';
+
+const PAGE_SIZES = [10, 50, 100];
 
 const NO_FILTERS = {
   search: '', status: '', managerId: '', showArchived: false, showCompleted: false,
 };
 
 /**
- * The home page: projects with their dates, status and how long they have been in it (flagging possible
+ * The home page: an overview of the visible projects (status, pain points, what is due soon, workloads), then
+ * projects with their dates, status and how long they have been in it (flagging possible
  * bottlenecks), progress against expected hours and whether they can be worked on. Admins see every project and
  * can create them; managers see the projects they manage; employees see the unfinished projects they are assigned
  * to, with their own milestones and without the overrun and bottleneck warnings.
  * Open projects come first; completed ones are hidden unless asked for, and then shown greyed out at the bottom
  * with their completion dates. Clicking a row opens it in place to show its description and milestones; the
- * magnifier opens the full project view. Admins can archive projects and milestones from the list.
+ * magnifier opens the full project view. Admins can archive projects and milestones from the list. The list comes
+ * in pages of 10, 50 or 100, with page controls above and below it.
  * @returns {JSX.Element} The projects page.
  */
 function ProjectsPage() {
@@ -43,7 +51,15 @@ function ProjectsPage() {
   const isEmployee = user.role === 'EMPLOYEE';
   const load = useCallback(() => loadProjectsAndPeople(user), [user]);
   const { data, error, loading, reload } = useLoader(load);
-  const [filters, setFilters] = useState(NO_FILTERS);
+  const { thresholds } = useSettings();
+  const [filters, setFiltersNow] = useState(NO_FILTERS);
+  const [perPage, setPerPage] = useState(10);
+  const [page, setPage] = useState(1);
+  // Any change to the filters starts again from the first page.
+  const setFilters = (update) => {
+    setFiltersNow(update);
+    setPage(1);
+  };
   const [creating, setCreating] = useState(false);
   const [expanded, toggle] = useToggleSet();
   const [busy, setBusy] = useState(false);
@@ -82,6 +98,12 @@ function ProjectsPage() {
   }, [data]);
 
   const rows = data ? projectRows(data.active, data.archived, filters, lookups.users) : [];
+  const pages = Math.max(1, Math.ceil(rows.length / perPage));
+  const currentPage = Math.min(page, pages);
+  const shown = rows.slice((currentPage - 1) * perPage, currentPage * perPage);
+  const pager = (where) => (
+    <Pagination page={currentPage} pages={pages} onChange={setPage} label={`Project pages, ${where}`} />
+  );
   const filtered = Boolean(filters.search || filters.status || filters.managerId);
   const showingCompleted = filters.showCompleted || filters.status === 'COMPLETE';
   // Project, Status, Start, Expected end, Expected, Progress and Availability, plus the role's own columns.
@@ -105,11 +127,14 @@ function ProjectsPage() {
         {isAdmin && <button type="button" className="primary" onClick={() => setCreating(true)} disabled={!data}>New Project</button>}
       </div>
 
-      {isEmployee && data && (
-        <p className="your-workload">
-          <span className="muted">Your workload: </span>
-          <Workload load={workloadByEmployee(data.active).get(user.id)} />
-        </p>
+      {data && (
+        <Overview
+          summary={isEmployee
+            ? employeeOverview(data.active, { today: dayOf(new Date()), thresholds, userId: user.id })
+            : overview(data.active, { today: dayOf(new Date()), thresholds, money: true })}
+          usersById={lookups.users}
+          isEmployee={isEmployee}
+        />
       )}
 
       <div className="filters">
@@ -145,6 +170,12 @@ function ProjectsPage() {
             Show archived projects
           </label>
         )}
+        <label htmlFor="projects-per-page">
+          Per page
+          <select id="projects-per-page" value={perPage} onChange={(event) => { setPerPage(Number(event.target.value)); setPage(1); }}>
+            {PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
+          </select>
+        </label>
         {filtered && <button type="button" onClick={() => setFilters((current) => ({ ...current, search: '', status: '', managerId: '' }))}>Clear filters</button>}
       </div>
 
@@ -165,120 +196,129 @@ function ProjectsPage() {
             {filtered ? 'No projects match these filters.' : 'No open projects. Tick Show completed projects to see finished ones.'}
           </p>
         ) : (
-          <div className="table-wrap">
-            <table className="clickable">
-              <thead>
-                <tr>
-                  <th scope="col">Project</th>
-                  <th scope="col">Status</th>
-                  {isEmployee && <th scope="col">My Milestones</th>}
-                  {isAdmin && <th scope="col">Manager</th>}
-                  <th scope="col">Start</th>
-                  <th scope="col">Expected end</th>
-                  {showingCompleted && <th scope="col">Completed</th>}
-                  <th scope="col" className="numeric">Expected</th>
-                  <th scope="col" className="numeric">Progress</th>
-                  <th scope="col">Availability</th>
-                  {isAdmin && <th scope="col"><span className="visually-hidden">Actions</span></th>}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(({ project, archived, completed }) => {
-                  const { state, label } = availability(project, lookups.projects);
-                  const open = expanded.has(project.id);
-                  const classes = [archived && 'archived', completed && 'completed', open && 'expanded'].filter(Boolean).join(' ');
-                  return (
-                    <Fragment key={project.id}>
-                      <tr className={classes || undefined} onClick={() => toggle(project.id)}>
-                        <td>
-                          <span className="project-name-cell">
-                            <button
-                              type="button"
-                              className="expand-toggle"
-                              aria-expanded={open}
-                              aria-controls={`project-preview-${project.id}`}
-                              onClick={(event) => { event.stopPropagation(); toggle(project.id); }}
-                            >
-                              <ChevronIcon />
-                              <span>{project.name}</span>
-                            </button>
-                            <a
-                              href={`#/projects/${project.id}`}
-                              className="icon-link"
-                              aria-label={`Open ${project.name}`}
-                              title="Open the full project view"
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              <MagnifierIcon />
-                            </a>
-                            {archived && <span className="badge archived-badge">Archived</span>}
-                          </span>
-                        </td>
-                        <td>
-                          <StatusBadge status={project.status} />
-                          {/* The days in the status show when the project is opened; a warning shows here too. */}
-                          {!isEmployee && <StatusAge item={project} warningOnly />}
-                        </td>
-                        {isEmployee && (
+          <>
+            <div className="pagination-bar">
+              <p className="muted" role="status">
+                {`Showing ${(currentPage - 1) * perPage + 1}–${(currentPage - 1) * perPage + shown.length} of ${rows.length} ${rows.length === 1 ? 'project' : 'projects'}`}
+              </p>
+              {pager('top')}
+            </div>
+            <div className="table-wrap">
+              <table className="clickable">
+                <thead>
+                  <tr>
+                    <th scope="col">Project</th>
+                    <th scope="col">Status</th>
+                    {isEmployee && <th scope="col">My Milestones</th>}
+                    {isAdmin && <th scope="col">Manager</th>}
+                    <th scope="col">Start</th>
+                    <th scope="col">Expected end</th>
+                    {showingCompleted && <th scope="col">Completed</th>}
+                    <th scope="col" className="numeric">Expected</th>
+                    <th scope="col" className="numeric">Progress</th>
+                    <th scope="col">Availability</th>
+                    {isAdmin && <th scope="col"><span className="visually-hidden">Actions</span></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.map(({ project, archived, completed }) => {
+                    const { state, label } = availability(project, lookups.projects);
+                    const open = expanded.has(project.id);
+                    const classes = [archived && 'archived', completed && 'completed', open && 'expanded'].filter(Boolean).join(' ');
+                    return (
+                      <Fragment key={project.id}>
+                        <tr className={classes || undefined} onClick={() => toggle(project.id)}>
                           <td>
-                            <ul className="plain-list">
-                              {project.milestones.filter((milestone) => milestone.assignedEmployees.includes(user.id))
-                                .map((milestone) => (
-                                  <li key={milestone.id}>
-                                    {`${milestone.name} `}
-                                    <StatusBadge status={milestone.status} />
-                                  </li>
-                                ))}
-                            </ul>
-                          </td>
-                        )}
-                        {isAdmin && <td>{lookups.users.get(project.manager)?.name ?? 'Unknown manager'}</td>}
-                        <td className="nowrap">{formatDate(project.startDate)}</td>
-                        <td className="nowrap">{formatDate(project.endDate)}</td>
-                        {showingCompleted && <td className="nowrap">{project.completedAt ? formatTimestamp(project.completedAt) : '—'}</td>}
-                        <td className="numeric nowrap">{project.expectedHours == null ? '—' : formatHours(project.expectedHours)}</td>
-                        <td className="numeric">
-                          <HoursProgress progress={project.progressTime} expected={project.expectedHours} showOverrun={!isEmployee} label={project.name} />
-                        </td>
-                        <td><span className={`availability ${state}`}>{label}</span></td>
-                        {isAdmin && (
-                          <td className="row-actions">
-                            {!archived && (
+                            <span className="project-name-cell">
                               <button
                                 type="button"
-                                className="link-button danger"
-                                disabled={busy}
-                                aria-label={`Archive ${project.name}`}
-                                onClick={(event) => { event.stopPropagation(); archiveProject(project); }}
+                                className="expand-toggle"
+                                aria-expanded={open}
+                                aria-controls={`project-preview-${project.id}`}
+                                onClick={(event) => { event.stopPropagation(); toggle(project.id); }}
                               >
-                                Archive
+                                <ChevronIcon />
+                                <span>{project.name}</span>
                               </button>
-                            )}
+                              <a
+                                href={`#/projects/${project.id}`}
+                                className="icon-link"
+                                aria-label={`Open ${project.name}`}
+                                title="Open the full project view"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <MagnifierIcon />
+                              </a>
+                              {archived && <span className="badge archived-badge">Archived</span>}
+                            </span>
                           </td>
-                        )}
-                      </tr>
-                      {open && (
-                        <tr className="preview-row" id={`project-preview-${project.id}`}>
-                          <td colSpan={columns}>
-                            <ProjectPreview
-                              project={project}
-                              usersById={lookups.users}
-                              showOverrun={!isEmployee}
-                            showStatusAge={!isEmployee}
-                              highlightUserId={isEmployee ? user.id : undefined}
-                            everyonesHours={!isEmployee}
-                              onArchiveMilestone={isAdmin && !archived ? (milestone) => archiveMilestone(project, milestone) : undefined}
-                              busy={busy}
-                            />
+                          <td>
+                            <StatusBadge status={project.status} />
+                            {/* The days in the status show when the project is opened; a warning shows here too. */}
+                            {!isEmployee && <StatusAge item={project} warningOnly />}
                           </td>
+                          {isEmployee && (
+                            <td>
+                              <ul className="plain-list">
+                                {project.milestones.filter((milestone) => milestone.assignedEmployees.includes(user.id))
+                                  .map((milestone) => (
+                                    <li key={milestone.id}>
+                                      {`${milestone.name} `}
+                                      <StatusBadge status={milestone.status} />
+                                    </li>
+                                  ))}
+                              </ul>
+                            </td>
+                          )}
+                          {isAdmin && <td>{lookups.users.get(project.manager)?.name ?? 'Unknown manager'}</td>}
+                          <td className="nowrap">{formatDate(project.startDate)}</td>
+                          <td className="nowrap">{formatDate(project.endDate)}</td>
+                          {showingCompleted && <td className="nowrap">{project.completedAt ? formatTimestamp(project.completedAt) : '—'}</td>}
+                          <td className="numeric nowrap">{project.expectedHours == null ? '—' : formatHours(project.expectedHours)}</td>
+                          <td className="numeric">
+                            <HoursProgress progress={project.progressTime} expected={project.expectedHours} showOverrun={!isEmployee} label={project.name} />
+                          </td>
+                          <td><span className={`availability ${state}`}>{label}</span></td>
+                          {isAdmin && (
+                            <td className="row-actions">
+                              {!archived && (
+                                <button
+                                  type="button"
+                                  className="link-button danger"
+                                  disabled={busy}
+                                  aria-label={`Archive ${project.name}`}
+                                  onClick={(event) => { event.stopPropagation(); archiveProject(project); }}
+                                >
+                                  Archive
+                                </button>
+                              )}
+                            </td>
+                          )}
                         </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        {open && (
+                          <tr className="preview-row" id={`project-preview-${project.id}`}>
+                            <td colSpan={columns}>
+                              <ProjectPreview
+                                project={project}
+                                usersById={lookups.users}
+                                showOverrun={!isEmployee}
+                              showStatusAge={!isEmployee}
+                                highlightUserId={isEmployee ? user.id : undefined}
+                              everyonesHours={!isEmployee}
+                                onArchiveMilestone={isAdmin && !archived ? (milestone) => archiveMilestone(project, milestone) : undefined}
+                                busy={busy}
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {pages > 1 && <div className="pagination-bar bottom">{pager('bottom')}</div>}
+          </>
         )
       )}
 

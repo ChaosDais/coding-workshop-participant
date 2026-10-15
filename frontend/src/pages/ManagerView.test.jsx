@@ -28,6 +28,8 @@ const apollo = {
   startDate: '2026-01-01', endDate: '2026-12-31', progressTime: 45, expectedHours: 40, budget: 5000, spent: 900,
   statusChangedAt: '2026-10-12T12:00:00Z', dependsOn: ['other'],
   dependencies: [{ id: 'other', name: 'Gemini (other manager)', status: 'COMPLETE', archived: false }],
+  // Eli logged on Design; Sam logged on Build before moving off it; the manager logged an hour too.
+  hoursByMilestone: { ms1: { e1: 6, m1: 1 }, ms2: { e3: 2.5 } },
   milestones: [
     milestone('ms1', 'Design', { assignedEmployees: ['e1'], expectedHours: 10 }),
     milestone('ms2', 'Build', {
@@ -141,6 +143,24 @@ describe('manager view', () => {
     const time = screen.getByRole('group', { name: 'Time on Design' });
     expect(within(time).getByRole('button', { name: 'Log Time' })).toBeTruthy();
     expect(within(time).getByRole('button', { name: 'Start Timer' })).toBeTruthy();
+  });
+
+  it('shows who is responsible for a project in its full view', async () => {
+    window.location.hash = '#/projects/p1';
+    render(<App />);
+    const table = await screen.findByRole('table', { name: 'Project team' });
+    const rows = within(table).getAllByRole('row').slice(1);
+    // The manager first, then everyone on its milestones or who logged time here, by name.
+    expect(rows.map((row) => row.cells[0].textContent)).toEqual(['Morgan ManagerManager', 'Dana Designer', 'Eli Employee', 'Sam Support']);
+    const eli = rows[2];
+    expect(eli.textContent).toContain('Developer');
+    expect(eli.textContent).toContain('eli@acme.com');
+    expect(eli.textContent).toContain('Design');
+    expect(eli.cells[4].textContent).toBe('6 h');
+    expect(eli.cells[5].textContent).toBe('10 h');
+    expect(rows[3].textContent).toContain('No longer assigned');
+    expect(rows[3].cells[4].textContent).toBe('2 h 30 min');
+    expect(rows[0].cells[4].textContent).toBe('1 h');
   });
 
   it('shows their team with each person’s current milestones', async () => {

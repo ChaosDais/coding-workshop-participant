@@ -88,7 +88,9 @@ frontend/
   src/timer/TimerContext.jsx        the signed-in user's running timer, shared by the timer bar and project view
   src/components/                   NavBar (Options is the gear icon), Loading (spinner), forms (Project,
                                     Milestone, User, ResetPassword), Modal, Field, AuditTable, AssigneeList,
-                                    HoursProgress (completion %), StatusAge, StatusBadge, ErrorMessage, ProjectPreview (a project opened in place in
+                                    HoursProgress (completion %), StatusAge, StatusBadge, ErrorMessage,
+                                    ProjectTeam (who is responsible for a project, in its full view),
+                                    ProjectPreview (a project opened in place in
                                     the list), RunningTimer (clock and Stop, on the timer's milestone in the
                                     project view, else in the TimerBar under the nav bar), LogTimeForm,
                                     TimeEntries; PresetList, RequestForm, ResponsePanel and
@@ -299,6 +301,14 @@ All of these live in `services/ProjectRules.java`, which every project and miles
   - A change that reopens a project or milestone may move its dates in the same request.
 - **Milestone dates inside the project**: checked for new milestones, for changed milestone dates, and for every
   milestone when the project's own dates change.
+- **No start in the past**: a project or milestone cannot start before today (UTC). Checked when it is created or its
+  start date changes, so work that has already started stays editable.
+- **Start after dependencies**: a milestone or project cannot start before the unfinished milestones or projects it
+  depends on end (starting the day they end is fine), and a dependency's end cannot move past the start of
+  something that depends on it. Completed dependencies no longer constrain anything.
+- **Possible expected hours**: expected hours are at most 24 hours a day, for each day from start to end inclusive,
+  for each person: a milestone's assignees, or for a project everyone assigned to its milestones; at least one.
+  Checked when the expected hours or dates change. The forms check all three rules too, and show the limit.
 - **Dependencies** (`dependsOn`):
   - Each entry must be another milestone of the same project; self-dependencies and cycles are rejected.
   - A milestone cannot leave TODO until everything it depends on is COMPLETE.
@@ -336,6 +346,12 @@ Checked in `services/ProjectService.java`, since they span projects:
   the frontend (`workloadByEmployee` in `utils/projects.js`) from the project list, and shown on Employees, Team
   and, for employees, their own project list. The Workload page (admins: everyone; managers: their team) charts
   each employee's hours logged on those milestones over time against their workload, from `GET /time/daily`.
+- **Overview**: the project list opens with a summary of the projects the viewer can see (`utils/overview.js`,
+  `components/Overview.jsx`). Admins and managers get the share of milestones complete with projects by status,
+  pain points (overdue milestones and projects, blocked projects past their start, reviews waiting past the
+  threshold, unassigned open milestones, projects over expected hours or budget), milestones due in 30 days and the
+  largest workloads. Employees get their own progress against their workload, their milestones, and the pain
+  points and deadlines among those milestones only.
 - **Hours per person**: each project response carries `hoursByMilestone` (milestone id → user id → hours), shown
   beside each person in the project list's expanded milestones. Employees receive only their own hours.
 - **Cost**: hours × hourly rate, where hourly rate = annual salary ÷ 2,080 (40 hours × 52 weeks). The rate is
@@ -425,6 +441,7 @@ cd frontend && npm test
 | `ManagerTest` | Every manager permission, allowed and denied |
 | `EmployeeTest` | Employee visibility, profile edits, review status, time logging, timer and cap, corrections, cost |
 | `IntegrityTest` | Completion times, frozen dates, date ranges, milestone dependencies |
+| `ScheduleRulesTest` | No start in the past, start after dependencies, possible expected hours |
 | `ProjectDependencyTest` | Project dependencies: blocking, cycles, the chain staying intact, admin-only changes |
 | `PostgresRepositoriesTest` | Every PostgreSQL repository, plus schema upgrades from earlier versions |
 | `PostgresDatabaseTest` | Retrying the connection while a paused Aurora database resumes |

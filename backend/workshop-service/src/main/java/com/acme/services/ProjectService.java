@@ -492,6 +492,37 @@ public class ProjectService {
      *   <li>a completed project cannot be reopened while a project depending on it has started.</li>
      * </ul>
      */
+    /**
+     * A project does not start before the unfinished projects it depends on end (the same day is fine), and its
+     * end does not move past the start of an unfinished project depending on it. Checked when the dates or the
+     * dependencies change, so earlier data stays editable.
+     */
+    private void checkProjectDependencyDates(Project before, Project after, boolean dependenciesChanged) {
+        boolean startChanged = before == null || !before.startDate().equals(after.startDate());
+        if (startChanged || dependenciesChanged) {
+            for (String dependencyId : after.dependsOn()) {
+                projects.findById(dependencyId)
+                        .filter(dependency -> dependency.status() != CompletionStatus.COMPLETE)
+                        .filter(dependency -> after.startDate().isBefore(dependency.endDate()))
+                        .ifPresent(dependency -> {
+                            throw new IllegalArgumentException("Project '" + after.name() + "' cannot start before '"
+                                    + dependency.name() + "', which it depends on, ends (" + dependency.endDate() + ")");
+                        });
+            }
+        }
+        boolean endChanged = before != null && !before.endDate().equals(after.endDate());
+        if (endChanged && after.status() != CompletionStatus.COMPLETE) {
+            dependentsOf(after.id()).stream()
+                    .filter(dependent -> dependent.status() != CompletionStatus.COMPLETE)
+                    .filter(dependent -> dependent.startDate().isBefore(after.endDate()))
+                    .findFirst()
+                    .ifPresent(dependent -> {
+                        throw new IllegalArgumentException("Project '" + after.name() + "' cannot end after '"
+                                + dependent.name() + "', which depends on it, starts (" + dependent.startDate() + ")");
+                    });
+        }
+    }
+
     private void checkProjectDependencies(Project before, Project after) {
         boolean dependenciesChanged = before == null || !before.dependsOn().equals(after.dependsOn());
         if (dependenciesChanged) {
@@ -506,6 +537,7 @@ public class ProjectService {
             }
             requireNoProjectCycle(after);
         }
+        checkProjectDependencyDates(before, after, dependenciesChanged);
 
         List<String> incomplete = after.dependsOn().stream()
                 .map(dependency -> projects.findById(dependency))

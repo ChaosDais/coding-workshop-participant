@@ -4,8 +4,10 @@ import Field from './Field.jsx';
 import ErrorMessage from './ErrorMessage.jsx';
 import { STATUSES, statusLabel } from '../utils/format.js';
 import {
-  compact, dateRange, nonNegativeNumber, required,
+  compact, dateRange, endBeforeDependents, expectedHoursFit, nonNegativeNumber, required, startAfterDependencies,
+  startNotPast,
 } from '../utils/validation.js';
+import { dayOf } from '../utils/workload.js';
 
 const EMPTY = {
   name: '', description: '', startDate: '', endDate: '', manager: '', budget: '', expectedHours: '', status: 'TODO',
@@ -46,12 +48,24 @@ function ProjectForm({
 
   const submit = async (event) => {
     event.preventDefault();
+    const range = dateRange(values.startDate, values.endDate);
+    const dependencies = projects.filter((other) => values.dependsOn.includes(other.id));
+    const dependents = project ? projects.filter((other) => (other.dependsOn ?? []).includes(project.id)) : [];
+    range.start = range.start
+      ?? startNotPast(values.startDate, project?.startDate, dayOf(new Date()))
+      ?? startAfterDependencies(values.startDate, dependencies);
+    if (!range.end && project && values.endDate !== project.endDate) {
+      range.end = endBeforeDependents(values.endDate, dependents);
+    }
+    // Everyone assigned to the project's milestones counts toward what is possible; at least one person.
+    const people = new Set((project?.milestones ?? []).flatMap((milestone) => milestone.assignedEmployees)).size;
     const found = compact({
       name: required(values.name, 'Name'),
       manager: required(values.manager, 'Manager'),
       budget: nonNegativeNumber(values.budget, 'Budget'),
-      expectedHours: nonNegativeNumber(values.expectedHours, 'Expected hours', { optional: true }),
-      ...dateRange(values.startDate, values.endDate),
+      expectedHours: nonNegativeNumber(values.expectedHours, 'Expected hours', { optional: true })
+        ?? expectedHoursFit(values.expectedHours, values.startDate, values.endDate, people, 'everyone assigned to its milestones'),
+      ...range,
     });
     setErrors(found);
     if (Object.keys(found).length > 0) {

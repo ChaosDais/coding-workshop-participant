@@ -37,7 +37,7 @@ class IntegrityTest {
         token = app.setUpAdmin();
         managerId = app.createUser(token, "manager@example.com", "MANAGER", null);
         employeeId = app.createUser(token, "employee@example.com", "EMPLOYEE", managerId);
-        projectId = body(send("POST", "/projects", project("2026-01-01", "2026-12-31", "IN_PROGRESS")))
+        projectId = body(send("POST", "/projects", project("2028-01-01", "2028-12-31", "IN_PROGRESS")))
                 .getAsJsonObject().get("id").getAsString();
     }
 
@@ -59,9 +59,11 @@ class IntegrityTest {
                 assignee == null ? "" : "\"" + assignee + "\"", dependencies);
     }
 
+    /** Adds a milestone; one with dependencies starts the day they end, as the dependency-date rule requires. */
     private String add(String name, String status, String... dependsOn) {
-        Map<String, Object> response = send("POST", milestones(),
-                milestone(name, "2026-02-01", "2026-03-01", status, dependsOn));
+        Map<String, Object> response = send("POST", milestones(), dependsOn.length == 0
+                ? milestone(name, "2028-02-01", "2028-03-01", status, dependsOn)
+                : milestone(name, "2028-03-01", "2028-04-01", status, dependsOn));
         assertEquals(201, status(response), () -> String.valueOf(response.get("body")));
         return body(response).getAsJsonObject().get("id").getAsString();
     }
@@ -91,17 +93,17 @@ class IntegrityTest {
         // Later edits that keep it complete keep the original time; a completedAt sent by a client is ignored.
         app.clock.advance(Duration.ofHours(3));
         token = app.signIn(TestApp.ADMIN_EMAIL, PASSWORD).get("accessToken").getAsString();
-        assertEquals(200, status(send("PUT", milestones() + "/" + design, milestone("Design (renamed)", "2026-02-01",
-                "2026-03-01", "COMPLETE").replaceFirst("\\{", "{\"completedAt\": \"2020-01-01T00:00:00Z\", "))));
+        assertEquals(200, status(send("PUT", milestones() + "/" + design, milestone("Design (renamed)", "2028-02-01",
+                "2028-03-01", "COMPLETE").replaceFirst("\\{", "{\"completedAt\": \"2020-01-01T00:00:00Z\", "))));
         assertEquals("2026-10-14T12:00:00Z", milestoneById(design).get("completedAt").getAsString());
 
         assertEquals(200, status(setStatus(design, "IN_PROGRESS")));
         assertFalse(milestoneById(design).has("completedAt"));
 
         Map<String, Object> projectDone = send("PUT", "/projects/" + projectId,
-                project("2026-01-01", "2026-12-31", "COMPLETE"));
+                project("2028-01-01", "2028-12-31", "COMPLETE"));
         assertEquals("2026-10-14T15:00:00Z", body(projectDone).getAsJsonObject().get("completedAt").getAsString());
-        assertFalse(body(send("PUT", "/projects/" + projectId, project("2026-01-01", "2026-12-31", "IN_PROGRESS")))
+        assertFalse(body(send("PUT", "/projects/" + projectId, project("2028-01-01", "2028-12-31", "IN_PROGRESS")))
                 .getAsJsonObject().has("completedAt"));
     }
 
@@ -115,18 +117,18 @@ class IntegrityTest {
         app.clock.advance(Duration.ofDays(3));
         token = app.signIn(TestApp.ADMIN_EMAIL, PASSWORD).get("accessToken").getAsString();
         // Edits that keep the status keep the time.
-        assertEquals(200, status(send("PUT", milestones() + "/" + design, milestone("Design (renamed)", "2026-02-01",
-                "2026-03-01", "TODO"))));
+        assertEquals(200, status(send("PUT", milestones() + "/" + design, milestone("Design (renamed)", "2028-02-01",
+                "2028-03-01", "TODO"))));
         assertEquals("2026-10-14T12:00:00Z", milestoneById(design).get("statusChangedAt").getAsString());
         assertEquals(200, status(send("PUT", "/projects/" + projectId,
-                project("2026-01-01", "2026-12-31", "IN_PROGRESS").replace("Apollo", "Apollo II"))));
+                project("2028-01-01", "2028-12-31", "IN_PROGRESS").replace("Apollo", "Apollo II"))));
         assertEquals("2026-10-14T12:00:00Z", body(send("GET", "/projects/" + projectId, null)).getAsJsonObject()
                 .get("statusChangedAt").getAsString());
 
         // A status change restarts the clock.
         assertEquals(200, status(setStatus(design, "IN_PROGRESS")));
         assertEquals("2026-10-17T12:00:00Z", milestoneById(design).get("statusChangedAt").getAsString());
-        assertEquals(200, status(send("PUT", "/projects/" + projectId, project("2026-01-01", "2026-12-31",
+        assertEquals(200, status(send("PUT", "/projects/" + projectId, project("2028-01-01", "2028-12-31",
                 "AWAITING_REVIEW"))));
         assertEquals("2026-10-17T12:00:00Z", body(send("GET", "/projects/" + projectId, null)).getAsJsonObject()
                 .get("statusChangedAt").getAsString());
@@ -137,40 +139,40 @@ class IntegrityTest {
         String design = add("Design", "IN_PROGRESS");
         assertEquals(200, status(setStatus(design, "COMPLETE")));
         assertEquals("The dates of completed milestone 'Design' are frozen; reopen it to change them",
-                error(send("PUT", milestones() + "/" + design, milestone("Design", "2026-02-01", "2026-04-01",
+                error(send("PUT", milestones() + "/" + design, milestone("Design", "2028-02-01", "2028-04-01",
                         "COMPLETE"))));
         // Completing and changing dates in one request is allowed; the freeze starts once it is complete.
         String build = add("Build", "IN_PROGRESS");
-        assertEquals(200, status(send("PUT", milestones() + "/" + build, milestone("Build", "2026-03-01",
-                "2026-04-01", "COMPLETE"))));
+        assertEquals(200, status(send("PUT", milestones() + "/" + build, milestone("Build", "2028-03-01",
+                "2028-04-01", "COMPLETE"))));
         // Reopening unfreezes the dates, also within the same request.
-        assertEquals(200, status(send("PUT", milestones() + "/" + design, milestone("Design", "2026-02-01",
-                "2026-04-01", "IN_PROGRESS"))));
+        assertEquals(200, status(send("PUT", milestones() + "/" + design, milestone("Design", "2028-02-01",
+                "2028-04-01", "IN_PROGRESS"))));
 
         assertEquals(200, status(send("PUT", "/projects/" + projectId,
-                project("2026-01-01", "2026-12-31", "COMPLETE"))));
+                project("2028-01-01", "2028-12-31", "COMPLETE"))));
         assertEquals("The dates of a completed project are frozen; reopen it to change them",
-                error(send("PUT", "/projects/" + projectId, project("2026-01-01", "2027-06-30", "COMPLETE"))));
-        assertEquals(409, status(send("PUT", milestones() + "/" + design, milestone("Design", "2026-02-01",
-                "2026-05-01", "IN_PROGRESS"))));
-        assertEquals(200, status(send("PUT", "/projects/" + projectId, project("2026-01-01", "2027-06-30",
+                error(send("PUT", "/projects/" + projectId, project("2028-01-01", "2029-06-30", "COMPLETE"))));
+        assertEquals(409, status(send("PUT", milestones() + "/" + design, milestone("Design", "2028-02-01",
+                "2028-05-01", "IN_PROGRESS"))));
+        assertEquals(200, status(send("PUT", "/projects/" + projectId, project("2028-01-01", "2029-06-30",
                 "IN_PROGRESS"))));
     }
 
     @Test
     void milestoneDatesStayWithinTheProject() {
-        assertEquals("Milestone 'Early' must fall within the project's dates (2026-01-01 to 2026-12-31)",
-                error(send("POST", milestones(), milestone("Early", "2025-12-01", "2026-02-01", "TODO"))));
-        assertEquals(400, status(send("POST", milestones(), milestone("Late", "2026-11-01", "2027-01-31", "TODO"))));
+        assertEquals("Milestone 'Early' must fall within the project's dates (2028-01-01 to 2028-12-31)",
+                error(send("POST", milestones(), milestone("Early", "2027-12-01", "2028-02-01", "TODO"))));
+        assertEquals(400, status(send("POST", milestones(), milestone("Late", "2028-11-01", "2029-01-31", "TODO"))));
         String design = add("Design", "TODO");
         assertEquals(400, status(send("PUT", milestones() + "/" + design,
-                milestone("Design", "2026-02-01", "2027-03-01", "TODO"))));
+                milestone("Design", "2028-02-01", "2029-03-01", "TODO"))));
 
         // Shrinking the project so a milestone falls outside is refused too.
-        assertEquals(400, status(send("PUT", "/projects/" + projectId, project("2026-01-01", "2026-02-15",
+        assertEquals(400, status(send("PUT", "/projects/" + projectId, project("2028-01-01", "2028-02-15",
                 "IN_PROGRESS"))));
-        assertEquals(400, status(send("POST", "/projects", project("2026-01-01", "2026-06-30", "TODO")
-                .replaceFirst("\\{", "{\"milestones\": [" + milestone("Outside", "2026-07-01", "2026-08-01", "TODO")
+        assertEquals(400, status(send("POST", "/projects", project("2028-01-01", "2028-06-30", "TODO")
+                .replaceFirst("\\{", "{\"milestones\": [" + milestone("Outside", "2028-07-01", "2028-08-01", "TODO")
                         + "], "))));
     }
 
@@ -183,8 +185,8 @@ class IntegrityTest {
 
         // Renaming the project does not touch the milestone's dates, so the old milestone is not re-checked.
         assertEquals(200, status(send("PUT", "/projects/" + projectId,
-                project("2026-01-01", "2026-12-31", "IN_PROGRESS").replace("Apollo", "Apollo II"))));
-        assertEquals(400, status(send("PUT", "/projects/" + projectId, project("2026-01-02", "2026-12-31",
+                project("2028-01-01", "2028-12-31", "IN_PROGRESS").replace("Apollo", "Apollo II"))));
+        assertEquals(400, status(send("PUT", "/projects/" + projectId, project("2028-01-02", "2028-12-31",
                 "IN_PROGRESS"))));
     }
 
@@ -197,7 +199,7 @@ class IntegrityTest {
         assertEquals("Milestone 'Build' cannot start or complete until the milestones it depends on are complete:"
                 + " Design", error(setStatus(build, "IN_PROGRESS")));
         assertEquals(409, status(setStatus(build, "COMPLETE")));
-        assertEquals(409, status(send("POST", milestones(), milestone("Test", "2026-02-01", "2026-03-01",
+        assertEquals(409, status(send("POST", milestones(), milestone("Test", "2028-03-01", "2028-04-01",
                 "IN_PROGRESS", design))));
 
         // An employee can neither log time on it nor send it for review while it is blocked.
@@ -224,18 +226,18 @@ class IntegrityTest {
         String design = add("Design", "TODO");
         String build = add("Build", "TODO", design);
 
-        assertTrue(error(send("POST", milestones(), milestone("Test", "2026-02-01", "2026-03-01", "TODO",
+        assertTrue(error(send("POST", milestones(), milestone("Test", "2028-02-01", "2028-03-01", "TODO",
                 "nowhere"))).startsWith("Milestone 'Test' depends on a milestone that is not part of this project"));
         assertEquals("Milestone 'Build' cannot depend on itself", error(send("PUT", milestones() + "/" + build,
-                milestone("Build", "2026-02-01", "2026-03-01", "TODO", build))));
+                milestone("Build", "2028-02-01", "2028-03-01", "TODO", build))));
         assertEquals("Milestone dependencies cannot form a cycle: Design → Build → Design",
-                error(send("PUT", milestones() + "/" + design, milestone("Design", "2026-02-01", "2026-03-01",
+                error(send("PUT", milestones() + "/" + design, milestone("Design", "2028-02-01", "2028-03-01",
                         "TODO", build))));
 
         assertEquals("Other milestones depend on 'Design'; remove those dependencies first: Build",
                 error(send("DELETE", milestones() + "/" + design, null)));
-        assertEquals(200, status(send("PUT", milestones() + "/" + build, milestone("Build", "2026-02-01",
-                "2026-03-01", "TODO"))));
+        assertEquals(200, status(send("PUT", milestones() + "/" + build, milestone("Build", "2028-02-01",
+                "2028-03-01", "TODO"))));
         assertEquals(204, status(send("DELETE", milestones() + "/" + design, null)));
 
         JsonObject stored = milestoneById(build);

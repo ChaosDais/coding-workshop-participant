@@ -67,7 +67,7 @@ class EmployeeTest {
 
     private String createProject(String name, String manager) {
         Map<String, Object> response = app.send("POST", "/projects", """
-                {"name": "%s", "startDate": "2026-01-01", "endDate": "2026-12-31", "progressTime": 0,
+                {"name": "%s", "startDate": "2028-01-01", "endDate": "2028-12-31", "progressTime": 0,
                  "manager": "%s", "budget": 5000, "status": "IN_PROGRESS"}""".formatted(name, manager), adminToken);
         assertEquals(201, status(response), () -> String.valueOf(response.get("body")));
         return body(response).getAsJsonObject().get("id").getAsString();
@@ -75,7 +75,7 @@ class EmployeeTest {
 
     private String addMilestone(String project, String name, String assignee) {
         Map<String, Object> response = app.send("POST", "/projects/" + project + "/milestones", """
-                {"name": "%s", "startDate": "2026-01-01", "endDate": "2026-02-01", "progressTime": 0,
+                {"name": "%s", "startDate": "2028-01-01", "endDate": "2028-02-01", "progressTime": 0,
                  "assignedEmployees": ["%s"], "status": "IN_PROGRESS"}""".formatted(name, assignee), adminToken);
         assertEquals(201, status(response), () -> String.valueOf(response.get("body")));
         return body(response).getAsJsonObject().get("id").getAsString();
@@ -372,7 +372,7 @@ class EmployeeTest {
                 .get("progressTime").getAsDouble());
         // A progressTime sent for the project itself is ignored.
         assertEquals(3.75, body(app.send("PUT", "/projects/" + projectId, """
-                {"name": "Apollo", "startDate": "2026-01-01", "endDate": "2026-12-31", "progressTime": 999,
+                {"name": "Apollo", "startDate": "2028-01-01", "endDate": "2028-12-31", "progressTime": 999,
                  "manager": "%s", "budget": 5000, "status": "IN_PROGRESS"}""".formatted(managerId), adminToken))
                 .getAsJsonObject().get("progressTime").getAsDouble());
     }
@@ -459,7 +459,7 @@ class EmployeeTest {
         assertEquals(200, status(app.send("PUT", milestonePath(teammateMilestoneId) + "/status",
                 "{\"status\": \"COMPLETE\"}", adminToken)));
         assertEquals(200, status(app.send("PUT", "/projects/" + projectId, """
-                {"name": "Apollo", "startDate": "2026-01-01", "endDate": "2026-12-31", "manager": "%s",
+                {"name": "Apollo", "startDate": "2028-01-01", "endDate": "2028-12-31", "manager": "%s",
                  "budget": 5000, "status": "COMPLETE"}""".formatted(managerId), adminToken)));
 
         assertEquals(0, body(send("GET", "/projects", null)).getAsJsonArray().size());

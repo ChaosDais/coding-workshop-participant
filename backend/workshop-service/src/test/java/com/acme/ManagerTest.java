@@ -51,17 +51,19 @@ class ManagerTest {
         return body(response).getAsJsonObject().get("id").getAsString();
     }
 
+    /** Gemini, another manager's project, runs the year before Apollo, so Apollo may depend on it. */
     private static String project(String name, String manager, String status) {
+        String year = name.equals("Gemini") ? "2027" : "2028";
         return """
-                {"name": "%s", "startDate": "2026-01-01", "endDate": "2026-12-31", "progressTime": 0,
-                 "manager": "%s", "budget": 1000, "status": "%s"}""".formatted(name, manager, status);
+                {"name": "%s", "startDate": "%s-01-01", "endDate": "%s-12-31", "progressTime": 0,
+                 "manager": "%s", "budget": 1000, "status": "%s"}""".formatted(name, year, year, manager, status);
     }
 
     private static String milestone(String status, String... employees) {
         String assigned = String.join("\", \"", employees);
         return """
-                {"name": "Design", "description": "Wireframes for the main flows", "startDate": "2026-01-01",
-                 "endDate": "2026-02-01", "progressTime": 4, "assignedEmployees": [%s], "status": "%s"}"""
+                {"name": "Design", "description": "Wireframes for the main flows", "startDate": "2028-01-01",
+                 "endDate": "2028-02-01", "progressTime": 4, "assignedEmployees": [%s], "status": "%s"}"""
                 .formatted(employees.length == 0 ? "" : "\"" + assigned + "\"", status);
     }
 
@@ -144,10 +146,10 @@ class ManagerTest {
         assertEquals("Wireframes for the main flows", milestone.get("description").getAsString());
 
         Map<String, Object> completed = send("PUT", "/projects/" + projectId + "/milestones/" + milestoneId,
-                milestone("COMPLETE", employeeId).replace("2026-02-01", "2026-03-01"));
+                milestone("COMPLETE", employeeId).replace("2028-02-01", "2028-03-01"));
         assertEquals(200, status(completed));
         assertEquals("COMPLETE", body(completed).getAsJsonObject().get("status").getAsString());
-        assertEquals("2026-03-01", body(completed).getAsJsonObject().get("endDate").getAsString());
+        assertEquals("2028-03-01", body(completed).getAsJsonObject().get("endDate").getAsString());
 
         assertEquals(NOT_ON_TEAM,
                 error(send("PUT", "/projects/" + projectId + "/milestones/" + milestoneId,

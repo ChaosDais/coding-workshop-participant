@@ -154,7 +154,7 @@ class UsersTest {
         assertEquals(200, status(send("PUT", "/users/" + employeeId + "/manager", "{}")));
 
         assertEquals(201, status(send("POST", "/projects", """
-                {"name": "Apollo", "startDate": "2026-01-01", "endDate": "2026-12-31", "progressTime": 0,
+                {"name": "Apollo", "startDate": "2028-01-01", "endDate": "2028-12-31", "progressTime": 0,
                  "manager": "%s", "budget": 1, "status": "TODO"}""".formatted(managerId))));
         assertEquals("Give this manager's projects to another manager first", error(send("PUT", "/users/" + managerId,
                 "{\"email\": \"manager@example.com\", \"name\": \"M\", \"role\": \"EMPLOYEE\"}")));

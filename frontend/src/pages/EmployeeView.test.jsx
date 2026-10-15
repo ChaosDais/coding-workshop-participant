@@ -23,6 +23,8 @@ const apollo = {
   id: 'p1', name: 'Apollo', description: 'Crewed lunar landing', status: 'IN_PROGRESS', manager: 'm1',
   startDate: '2026-01-01', endDate: '2026-12-31', progressTime: 50, expectedHours: 40, dependsOn: [], dependencies: [],
   statusChangedAt: '2026-01-01T12:00:00Z',
+  // Only their own hours come back to an employee.
+  hoursByMilestone: { ms1: { e1: 0.5 } },
   milestones: [
     milestone('ms1', 'Design', { assignedEmployees: ['e1'], expectedHours: 1 }),
     milestone('ms2', 'Build', { assignedEmployees: ['e2'] }),
@@ -86,7 +88,17 @@ describe('employee view', () => {
     render(<App />);
     const nav = await screen.findByRole('navigation', { name: 'Main' });
     expect([...nav.querySelectorAll('a')].map((link) => link.textContent)).toEqual(['Projects']);
-    expect((await screen.findByText('Your workload:')).closest('p').textContent).toBe('Your workload: 1 h across 1 milestone');
+    const yours = await screen.findByRole('region', { name: 'Overview' });
+    // Their own progress: hours logged against their workload, and each milestone they are on.
+    const progress = within(yours).getByRole('heading', { name: 'Your progress' }).closest('section');
+    expect(within(progress).getByText('50%')).toBeTruthy();
+    expect(within(progress).getByText('of your workload logged (30 min of 1 h)')).toBeTruthy();
+    const mine = within(progress).getByRole('link', { name: 'Apollo: Design' }).closest('li');
+    expect(mine.textContent).toContain('30 min of 1 h');
+    expect(within(progress).queryByRole('link', { name: 'Apollo: Build' })).toBeNull();
+    // No overall status or team workload for employees.
+    expect(within(yours).queryByRole('heading', { name: 'Project status' })).toBeNull();
+    expect(within(yours).queryByRole('heading', { name: 'Workload' })).toBeNull();
     const row = (await screen.findByRole('link', { name: 'Open Apollo' })).closest('tr');
     expect(within(row).getByText(/Design/)).toBeTruthy();
     expect(within(row).queryByText(/Build/)).toBeNull();
@@ -101,6 +113,7 @@ describe('employee view', () => {
     render(<App />);
     const design = (await screen.findByText('Design', { selector: 'strong' })).closest('tr');
     expect(screen.queryByText('Budget')).toBeNull();
+    expect(screen.queryByRole('table', { name: 'Project team' })).toBeNull();
     expect(screen.queryByText('Spent')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Add Milestone' })).toBeNull();
     expect(within(design).getByText('You')).toBeTruthy();

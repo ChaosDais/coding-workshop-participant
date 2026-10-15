@@ -6,6 +6,9 @@ import com.acme.models.Milestone;
 import com.acme.models.Project;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -26,6 +29,11 @@ import java.util.Optional;
  *   <li>Dependencies point at other milestones of the same project and never form a cycle.</li>
  *   <li>A milestone cannot start (move past todo) or complete until everything it depends on is complete, and a
  *       completed milestone cannot be reopened while something depending on it has started.</li>
+ *   <li>Start dates are not in the past: checked when something is created or its start date changes.</li>
+ *   <li>A milestone does not start before the unfinished milestones it depends on end (starting the day they end
+ *       is fine), checked when its start, its dependencies or their end dates change.</li>
+ *   <li>Expected hours are possible: at most 24 hours a day, for each day from start to end inclusive, for each
+ *       person (a milestone's assignees, or everyone assigned in the project; at least one).</li>
  * </ul>
  */
 final class ProjectRules {
@@ -36,10 +44,99 @@ final class ProjectRules {
     static Project apply(Project before, Project after, Instant now) {
         Project stamped = stampCompletion(before, after, now);
         checkFrozenDates(before, stamped);
+        checkStartDates(before, stamped, LocalDate.ofInstant(now, ZoneOffset.UTC));
         checkMilestoneDates(before, stamped);
         checkDependencies(stamped);
+        checkDependencyDates(before, stamped);
         checkBlocking(before, stamped);
+        checkExpectedHours(before, stamped);
         return stamped;
+    }
+
+    /** Hours that fit between two dates, both included, for this many people at 24 hours a day. */
+    static double possibleHours(LocalDate start, LocalDate end, int people) {
+        return 24.0 * (ChronoUnit.DAYS.between(start, end) + 1) * Math.max(1, people);
+    }
+
+    private static void checkStartDates(Project before, Project after, LocalDate today) {
+        if ((before == null || !before.startDate().equals(after.startDate())) && after.startDate().isBefore(today)) {
+            throw new IllegalArgumentException("Project '" + after.name() + "' cannot start in the past (today is "
+                    + today + ")");
+        }
+        for (Milestone milestone : after.milestones()) {
+            Optional<Milestone> previous = find(before, milestone.id());
+            boolean startChanged = previous.isEmpty() || !previous.get().startDate().equals(milestone.startDate());
+            if (startChanged && milestone.startDate().isBefore(today)) {
+                throw new IllegalArgumentException("Milestone '" + milestone.name() + "' cannot start in the past"
+                        + " (today is " + today + ")");
+            }
+        }
+    }
+
+    private static void checkDependencyDates(Project before, Project after) {
+        Map<String, Milestone> byId = byId(after);
+        for (Milestone milestone : after.milestones()) {
+            Optional<Milestone> previous = find(before, milestone.id());
+            for (String dependencyId : milestone.dependsOn()) {
+                Milestone dependency = byId.get(dependencyId);
+                if (dependency.status() == CompletionStatus.COMPLETE
+                        || !milestone.startDate().isBefore(dependency.endDate())) {
+                    continue;
+                }
+                boolean dependentChanged = previous.isEmpty()
+                        || !previous.get().startDate().equals(milestone.startDate())
+                        || !previous.get().dependsOn().contains(dependencyId);
+                boolean dependencyEndChanged = find(before, dependencyId)
+                        .map(old -> !old.endDate().equals(dependency.endDate())).orElse(true);
+                if (dependentChanged) {
+                    throw new IllegalArgumentException("Milestone '" + milestone.name() + "' cannot start before '"
+                            + dependency.name() + "', which it depends on, ends (" + dependency.endDate() + ")");
+                }
+                if (dependencyEndChanged) {
+                    throw new IllegalArgumentException("Milestone '" + dependency.name() + "' cannot end after '"
+                            + milestone.name() + "', which depends on it, starts (" + milestone.startDate() + ")");
+                }
+            }
+        }
+    }
+
+    private static void checkExpectedHours(Project before, Project after) {
+        boolean projectChanged = before == null || !Objects.equals(before.expectedHours(), after.expectedHours())
+                || !sameDates(before.startDate(), before.endDate(), after.startDate(), after.endDate());
+        if (projectChanged && after.expectedHours() != null) {
+            long people = after.milestones().stream().flatMap(milestone -> milestone.assignedEmployees().stream())
+                    .distinct().count();
+            requirePossible("project '" + after.name() + "'", after.expectedHours(), after.startDate(),
+                    after.endDate(), (int) people, "everyone assigned to its milestones");
+        }
+        for (Milestone milestone : after.milestones()) {
+            Optional<Milestone> previous = find(before, milestone.id());
+            boolean changed = previous.isEmpty()
+                    || !Objects.equals(previous.get().expectedHours(), milestone.expectedHours())
+                    || !sameDates(previous.get().startDate(), previous.get().endDate(), milestone.startDate(),
+                    milestone.endDate());
+            if (changed && milestone.expectedHours() != null) {
+                requirePossible("milestone '" + milestone.name() + "'", milestone.expectedHours(),
+                        milestone.startDate(), milestone.endDate(), milestone.assignedEmployees().size(),
+                        "its assignees");
+            }
+        }
+    }
+
+    private static void requirePossible(String what, double expected, LocalDate start, LocalDate end, int people,
+                                        String whoCounts) {
+        double possible = possibleHours(start, end, people);
+        if (expected > possible) {
+            long days = ChronoUnit.DAYS.between(start, end) + 1;
+            int counted = Math.max(1, people);
+            throw new IllegalArgumentException("The expected hours of " + what + " are more than possible: at most "
+                    + formatHours(possible) + " (24 h a day × " + days + (days == 1 ? " day" : " days") + " × "
+                    + counted + (counted == 1 ? " person" : " people") + ", counting " + whoCounts + ")");
+        }
+    }
+
+    private static String formatHours(double hours) {
+        return (hours == Math.rint(hours) ? String.valueOf((long) hours) : String.valueOf(hours)) + " h";
     }
 
     private static Project stampCompletion(Project before, Project after, Instant now) {

@@ -29,7 +29,7 @@ class AdminViewTest {
         token = app.setUpAdmin();
         String managerId = app.createUser(token, "manager@example.com", "MANAGER", null);
         projectId = body(send("POST", "/projects", """
-                {"name": "Apollo", "startDate": "2026-01-01", "endDate": "2026-12-31", "manager": "%s",
+                {"name": "Apollo", "startDate": "2028-01-01", "endDate": "2028-12-31", "manager": "%s",
                  "budget": 1000, "status": "IN_PROGRESS"}""".formatted(managerId))).getAsJsonObject()
                 .get("id").getAsString();
         designId = addMilestone("Design");
@@ -42,7 +42,7 @@ class AdminViewTest {
 
     private String addMilestone(String name) {
         return body(send("POST", "/projects/" + projectId + "/milestones", """
-                {"name": "%s", "startDate": "2026-02-01", "endDate": "2026-03-01", "status": "TODO"}"""
+                {"name": "%s", "startDate": "2028-02-01", "endDate": "2028-03-01", "status": "TODO"}"""
                 .formatted(name))).getAsJsonObject().get("id").getAsString();
     }
 

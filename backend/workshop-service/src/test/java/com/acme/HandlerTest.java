@@ -34,10 +34,10 @@ class HandlerTest {
         managerId = app.createUser(token, "manager@example.com", "MANAGER", null);
         employeeId = app.createUser(token, "employee@example.com", "EMPLOYEE", managerId);
         projectJson = """
-                {"name": "Apollo", "startDate": "2026-01-01", "endDate": "2026-12-31", "progressTime": 12.5,
+                {"name": "Apollo", "startDate": "2028-01-01", "endDate": "2028-12-31", "progressTime": 12.5,
                  "manager": "%s", "budget": 50000.75, "status": "IN_PROGRESS"}""".formatted(managerId);
         milestoneJson = """
-                {"name": "Design", "startDate": "2026-01-01", "endDate": "2026-02-01", "progressTime": 4,
+                {"name": "Design", "startDate": "2028-01-01", "endDate": "2028-02-01", "progressTime": 4,
                  "assignedEmployees": ["%s"], "status": "TODO"}""".formatted(employeeId);
     }
 
@@ -73,7 +73,7 @@ class HandlerTest {
         assertEquals(200, status(send("PUT", "/projects/" + id, projectJson.replace("Apollo", "Gemini"))));
         JsonObject stored = body(send("GET", "/projects/" + id, null)).getAsJsonObject();
         assertEquals("Gemini", stored.get("name").getAsString());
-        assertEquals("2026-12-31", stored.get("endDate").getAsString());
+        assertEquals("2028-12-31", stored.get("endDate").getAsString());
         assertEquals(50000.75, stored.get("budget").getAsDouble());
         assertEquals(managerId, stored.get("manager").getAsString());
         assertEquals(1, stored.getAsJsonArray("milestones").size());
@@ -184,13 +184,13 @@ class HandlerTest {
 
     @Test
     void invalidRequestsAreRejected() {
-        Map<String, Object> endBeforeStart = send("POST", "/projects", projectJson.replace("2026-12-31", "2025-01-01"));
+        Map<String, Object> endBeforeStart = send("POST", "/projects", projectJson.replace("2028-12-31", "2027-01-01"));
         assertEquals(400, status(endBeforeStart));
         assertEquals("endDate must not be before startDate", error(endBeforeStart));
 
         assertTrue(error(send("POST", "/projects", projectJson.replace("IN_PROGRESS", "DONE")))
                 .startsWith("status must be one of"));
-        assertTrue(error(send("POST", "/projects", projectJson.replace("2026-12-31", "31.12.2026")))
+        assertTrue(error(send("POST", "/projects", projectJson.replace("2028-12-31", "31.12.2026")))
                 .startsWith("Dates must use the format"));
         assertEquals("name is required", error(send("POST", "/projects", projectJson.replace("Apollo", " "))));
         assertEquals("Request body is not valid JSON", error(send("POST", "/projects", "{ \"name\": ")));

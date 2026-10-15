@@ -13,6 +13,7 @@ import TimeEntries from '../components/TimeEntries.jsx';
 import MilestoneForm from '../components/MilestoneForm.jsx';
 import Modal from '../components/Modal.jsx';
 import ProjectForm from '../components/ProjectForm.jsx';
+import ProjectTeam from '../components/ProjectTeam.jsx';
 import StatusAge from '../components/StatusAge.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -240,6 +241,14 @@ function ProjectDetailPage({ projectId }) {
           </ul>
         )}
       </section>
+
+      {/* Admins and managers see who is responsible for the project; employees see their teammates on milestones. */}
+      {canManage && (
+        <section>
+          <h2>Team</h2>
+          <ProjectTeam project={project} usersById={lookups.users} />
+        </section>
+      )}
 
       <section>
         <div className="section-header">

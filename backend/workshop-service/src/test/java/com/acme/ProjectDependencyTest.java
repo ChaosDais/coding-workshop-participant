@@ -35,18 +35,24 @@ class ProjectDependencyTest {
         return app.send(method, path, body, token);
     }
 
+    /** "Design..." projects run first; the others start once they end, as projects depending on them must. */
+    private static String dates(String name) {
+        return name.startsWith("Design") ? "\"startDate\": \"2028-01-01\", \"endDate\": \"2028-06-30\""
+                : "\"startDate\": \"2028-07-01\", \"endDate\": \"2028-12-31\"";
+    }
+
     private String project(String name, String status, String... dependsOn) {
         String dependencies = dependsOn.length == 0 ? "" : "\"" + String.join("\", \"", dependsOn) + "\"";
         return """
-                {"name": "%s", "startDate": "2026-01-01", "endDate": "2026-12-31", "manager": "%s", "budget": 1000,
-                 "status": "%s", "dependsOn": [%s]}""".formatted(name, managerId, status, dependencies);
+                {"name": "%s", %s, "manager": "%s", "budget": 1000,
+                 "status": "%s", "dependsOn": [%s]}""".formatted(name, dates(name), managerId, status, dependencies);
     }
 
     /** A project body without a dependsOn field, which keeps the existing dependencies on update. */
     private String projectWithoutDependencies(String name, String status) {
         return """
-                {"name": "%s", "startDate": "2026-01-01", "endDate": "2026-12-31", "manager": "%s", "budget": 1000,
-                 "status": "%s"}""".formatted(name, managerId, status);
+                {"name": "%s", %s, "manager": "%s", "budget": 1000,
+                 "status": "%s"}""".formatted(name, dates(name), managerId, status);
     }
 
     private String create(String name, String status, String... dependsOn) {
@@ -57,7 +63,7 @@ class ProjectDependencyTest {
 
     private String milestone(String status) {
         return """
-                {"name": "Foundations", "startDate": "2026-02-01", "endDate": "2026-03-01", "status": "%s",
+                {"name": "Foundations", "startDate": "2028-08-01", "endDate": "2028-09-01", "status": "%s",
                  "assignedEmployees": ["%s"]}""".formatted(status, employeeId);
     }
 
