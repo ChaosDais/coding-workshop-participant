@@ -83,7 +83,8 @@ frontend/
                                     Appearance, System for admins), Projects and ProjectDetail (every role;
                                     employees get a reduced view), Employees and AuditLog (admins), Team
                                     (managers), ApiTester (#/tester); on Employees and Team, an employee's
-                                    row opens to show their work (EmployeeWork)
+                                    row opens to show their work (EmployeeWork); on Employees, a manager's
+                                    opens to show their projects, milestones and team (ManagerWork)
   src/timer/TimerContext.jsx        the signed-in user's running timer, shared by the timer bar and project view
   src/components/                   NavBar (Options is the gear icon), Loading (spinner), forms (Project,
                                     Milestone, User, ResetPassword), Modal, Field, AuditTable, AssigneeList,
@@ -239,6 +240,7 @@ Authorization happens in two layers, so a missing check in one is caught by the 
 | `PUT /time/{id}` (correct an entry) | ✓ | — | — | — |
 | `GET /users/{id}/time` (assignments and hours by project and milestone) | ✓ | own team, own projects | themselves | — |
 | `GET /audit` | ✓ | — | — | — |
+| `GET /audit/page` | ✓ | — | — | — |
 | `GET /settings/bottlenecks` | ✓ | ✓ | ✓ | — |
 | `PUT /settings/bottlenecks` | ✓ | — | — | — |
 
@@ -327,6 +329,11 @@ Checked in `services/ProjectService.java`, since they span projects:
   dependencies are all complete, and whose project's dependencies are all complete.
 - **Progress**: logged hours are added to the milestone's `progressTime` inside the database, in the same
   transaction as the entry, so concurrent requests cannot lose hours.
+- **Workload**: an employee's share of the expected hours of the unfinished (not COMPLETE) milestones they are
+  assigned to, on projects that are not complete or archived. A milestone's expected hours are split evenly
+  between everyone assigned to it; milestones without expected hours are counted, but add no hours. Computed in
+  the frontend (`workloadByEmployee` in `utils/projects.js`) from the project list, and shown on Employees, Team
+  and, for employees, their own project list.
 - **Cost**: hours × hourly rate, where hourly rate = annual salary ÷ 2,080 (40 hours × 52 weeks). The rate is
   captured on each entry, so later pay changes do not alter past cost. A user without a salary costs 0.
 - **Corrections**: an admin can correct an entry's hours (0 to 24, where 0 voids it) with a required reason. The
@@ -364,6 +371,8 @@ messages name what they are about, and a record that cannot be found is describe
 Reads and rejected requests are not recorded. Admins read them at `GET /audit`, newest first, with optional
 filters: `projectId`, `milestoneId`, `action` (one or more, comma-separated), `from` and `to` (`YYYY-MM-DD`,
 inclusive, UTC), `q` (text in the action, actor or details, ignoring case) and `limit` (default 100, at most 500).
+`GET /audit/page` takes the same filters plus `offset` and returns `{entries, total, offset, limit}`; the Audit Log
+page uses it to show pages of 10, 100, 250 or 500 entries with page controls above and below the list.
 Entries are timestamped with the same clock as the rest of the service.
 
 | Area | Actions |

@@ -86,6 +86,7 @@ describe('employee view', () => {
     render(<App />);
     const nav = await screen.findByRole('navigation', { name: 'Main' });
     expect([...nav.querySelectorAll('a')].map((link) => link.textContent)).toEqual(['Projects']);
+    expect((await screen.findByText('Your workload:')).closest('p').textContent).toBe('Your workload: 1 h across 1 milestone');
     const row = (await screen.findByRole('link', { name: 'Open Apollo' })).closest('tr');
     expect(within(row).getByText(/Design/)).toBeTruthy();
     expect(within(row).queryByText(/Build/)).toBeNull();

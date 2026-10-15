@@ -4,11 +4,13 @@ import {
 import EmployeeWork from '../components/EmployeeWork.jsx';
 import ErrorMessage from '../components/ErrorMessage.jsx';
 import { ChevronIcon } from '../components/Icons.jsx';
+import Workload from '../components/Workload.jsx';
 import Loading from '../components/Loading.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { useLoader } from '../hooks/useLoader.js';
 import { useToggleSet } from '../hooks/useToggleSet.js';
 import { projectsApi, usersApi } from '../services/api.js';
+import { workloadByEmployee } from '../utils/projects.js';
 import { filterUsers } from '../utils/users.js';
 
 async function loadTeam() {
@@ -18,7 +20,8 @@ async function loadTeam() {
 
 /**
  * A manager's team: each employee's name, email, ID and job, and the milestones they are currently working on in
- * the manager's projects (completed milestones and projects are left out). Opening a row shows everything they
+ * the manager's projects (completed milestones and projects are left out), and their workload: their share of
+ * those milestones' expected hours. Opening a row shows everything they
  * are assigned to on those projects and the time they logged on each.
  * @returns {JSX.Element} The team page.
  */
@@ -39,6 +42,7 @@ function TeamPage() {
     return byEmployee;
   }, [data]);
 
+  const workloads = useMemo(() => workloadByEmployee(data?.projects ?? []), [data]);
   const rows = data ? filterUsers(data.team, { search }) : [];
 
   return (
@@ -65,6 +69,7 @@ function TeamPage() {
                 <th scope="col">Email</th>
                 <th scope="col">ID</th>
                 <th scope="col">Job</th>
+                <th scope="col">Workload</th>
                 <th scope="col">Working on</th>
               </tr>
             </thead>
@@ -90,6 +95,7 @@ function TeamPage() {
                       <td>{person.email}</td>
                       <td><code title={person.id}>{person.id.slice(0, 8)}</code></td>
                       <td>{person.jobType ?? <span className="muted">—</span>}</td>
+                      <td><Workload load={workloads.get(person.id)} /></td>
                       <td>
                         {work.length === 0 ? <span className="muted">Not assigned</span> : (
                           <ul className="plain-list">
@@ -106,7 +112,7 @@ function TeamPage() {
                     </tr>
                     {open && (
                       <tr className="preview-row" id={`work-${person.id}`}>
-                        <td colSpan={5}><EmployeeWork person={person} /></td>
+                        <td colSpan={6}><EmployeeWork person={person} shares={workloads.get(person.id)?.shares} /></td>
                       </tr>
                     )}
                   </Fragment>

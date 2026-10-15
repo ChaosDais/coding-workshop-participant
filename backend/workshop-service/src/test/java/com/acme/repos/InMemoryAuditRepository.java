@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 
 /** Test double for the PostgreSQL repository, with the same filters; returns entries newest first. */
 public class InMemoryAuditRepository implements AuditRepository {
@@ -19,6 +20,15 @@ public class InMemoryAuditRepository implements AuditRepository {
 
     @Override
     public synchronized List<AuditEntry> find(AuditQuery query) {
+        return matching(query).skip(query.offset()).limit(query.limit()).toList();
+    }
+
+    @Override
+    public synchronized int count(AuditQuery query) {
+        return (int) matching(query).count();
+    }
+
+    private Stream<AuditEntry> matching(AuditQuery query) {
         return entries.stream()
                 .filter(entry -> query.projectId() == null
                         || query.projectId().equals(entry.details().get("projectId")))
@@ -27,9 +37,7 @@ public class InMemoryAuditRepository implements AuditRepository {
                 .filter(entry -> query.actions().isEmpty() || query.actions().contains(entry.action()))
                 .filter(entry -> query.from() == null || !day(entry).isBefore(query.from()))
                 .filter(entry -> query.to() == null || !day(entry).isAfter(query.to()))
-                .filter(entry -> query.text() == null || contains(entry, query.text()))
-                .limit(query.limit())
-                .toList();
+                .filter(entry -> query.text() == null || contains(entry, query.text()));
     }
 
     private static LocalDate day(AuditEntry entry) {

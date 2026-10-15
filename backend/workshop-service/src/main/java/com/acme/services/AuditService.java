@@ -54,6 +54,19 @@ public class AuditService {
         return getAuditEntries().stream().map(AuditEntry::asMap).toList();
     }
 
+    /**
+     * One page of the entries matching the query, newest first: the entries from its offset, up to its limit, and
+     * how many match in all, so the audit log can offer every page.
+     */
+    public Map<String, Object> page(AuditQuery query) {
+        Map<String, Object> page = new LinkedHashMap<>();
+        page.put("entries", find(query));
+        page.put("total", repository.count(query));
+        page.put("offset", query.offset());
+        page.put("limit", query.limit());
+        return page;
+    }
+
     /** The entries matching the query, newest first, in their response form. */
     public List<Map<String, Object>> find(AuditQuery query) {
         return repository.find(query).stream().map(AuditEntry::asMap).toList();

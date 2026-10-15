@@ -32,6 +32,23 @@ beforeEach(() => {
       return { status: 204, body: undefined };
     },
     'GET /users': people,
+    'GET /projects': [
+      {
+        id: 'p1', name: 'Apollo', status: 'IN_PROGRESS', manager: 'manager-1', startDate: '2026-01-01', endDate: '2026-12-31',
+        progressTime: 3, dependsOn: [],
+        milestones: [{
+          id: 'ms1', name: 'Design', status: 'IN_PROGRESS', progressTime: 3, expectedHours: 12, assignedEmployees: ['employee-1'], dependsOn: [],
+        }],
+      },
+      {
+        id: 'p3', name: 'Mercury', status: 'COMPLETE', manager: 'manager-1', startDate: '2025-01-01', endDate: '2025-12-31',
+        progressTime: 9, dependsOn: [], milestones: [],
+      },
+      {
+        id: 'p2', name: 'Gemini', status: 'TODO', manager: 'someone-else', startDate: '2026-01-01', endDate: '2026-12-31',
+        progressTime: 0, dependsOn: [], milestones: [],
+      },
+    ],
     'GET /users/employee-1/time': {
       userId: 'employee-1',
       totalHours: 3.5,
@@ -47,6 +64,18 @@ beforeEach(() => {
             hours: 0.25, entries: 1, lastLoggedAt: '2026-09-01T15:00:00Z',
           },
         ],
+      }, {
+        projectId: 'p8', projectName: 'Finished work', status: 'COMPLETE', archived: false, hours: 5,
+        milestones: [{
+          milestoneId: 'ms8', milestoneName: 'Wrap-up', status: 'COMPLETE', archived: false, assigned: false,
+          hours: 5, entries: 1, lastLoggedAt: '2026-08-01T15:00:00Z',
+        }],
+      }, {
+        projectId: 'p9', projectName: 'Shelved', status: 'IN_PROGRESS', archived: true, hours: 1,
+        milestones: [{
+          milestoneId: 'ms9', milestoneName: 'Spike', status: 'IN_PROGRESS', archived: false, assigned: false,
+          hours: 1, entries: 1, lastLoggedAt: '2026-07-01T15:00:00Z',
+        }],
       }],
     },
     'GET /users?archived=true': [{ id: 'old-1', name: 'Olive Old', email: 'olive@acme.com', role: 'EMPLOYEE', archived: true }],
@@ -87,15 +116,21 @@ describe('employees page', () => {
   it('opens an employee to show their assigned milestones and the time logged on each', async () => {
     render(<AuthProvider><EmployeesPage /></AuthProvider>);
     const eli = await screen.findByRole('button', { name: 'Eli Employee' });
-    // Only employees open; admins and managers have no assignments.
-    expect(screen.queryByRole('button', { name: 'Morgan Manager' })).toBeNull();
+    // Admins have nothing to open.
+    expect(screen.queryByRole('button', { name: 'Ada Admin' })).toBeNull();
 
     await userEvent.click(eli);
     expect(eli.getAttribute('aria-expanded')).toBe('true');
     const apollo = await screen.findByRole('region', { name: 'Apollo' });
-    expect(screen.getByText('Total logged:').closest('p').textContent).toBe('Total logged: 3 h 30 min');
+    // Completed and archived projects are left out, and so is their time.
+    expect(screen.getByText('Logged on current projects:').closest('p').textContent).toBe('Logged on current projects: 3 h 30 min');
+    expect(screen.queryByText('Finished work')).toBeNull();
+    expect(screen.queryByText('Shelved')).toBeNull();
     const design = within(apollo).getByText('Design').closest('tr');
     expect(design.textContent).toContain('3 h 15 min');
+    // Their share of the milestone's expected hours.
+    expect(design.textContent).toContain('12 h');
+    expect(screen.getByText('Eli Employee', { selector: 'span' }).closest('tr').textContent).toContain('12 h across 1 milestone');
     expect(design.textContent).toContain('2 entries');
     const research = within(apollo).getByText('Research').closest('tr');
     expect(research.textContent).toContain('No longer');
@@ -103,6 +138,24 @@ describe('employees page', () => {
 
     await userEvent.click(eli);
     expect(screen.queryByRole('region', { name: 'Apollo' })).toBeNull();
+  });
+
+  it('opens a manager to show their projects with milestones and assignees, and their team', async () => {
+    render(<AuthProvider><EmployeesPage /></AuthProvider>);
+    await userEvent.click(await screen.findByRole('button', { name: 'Morgan Manager' }));
+
+    const projects = await screen.findByRole('region', { name: 'Projects managed by Morgan Manager' });
+    const apollo = await within(projects).findByRole('region', { name: 'Apollo' });
+    expect(within(projects).queryByText('Gemini')).toBeNull();
+    // Completed projects are left out.
+    expect(within(projects).queryByText('Mercury')).toBeNull();
+    const design = within(apollo).getByText('Design').closest('tr');
+    expect(design.textContent).toContain('Eli Employee');
+
+    const team = screen.getByRole('region', { name: 'Team of Morgan Manager' });
+    expect(within(team).getByText('Eli Employee')).toBeTruthy();
+    expect(within(team).getByText('Software Engineer')).toBeTruthy();
+    expect(within(team).getByText('Eli Employee').closest('tr').textContent).toContain('12 h across 1 milestone');
   });
 
   it('does not offer to archive your own account', async () => {

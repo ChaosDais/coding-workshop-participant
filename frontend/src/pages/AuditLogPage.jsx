@@ -2,35 +2,41 @@ import { useCallback, useState } from 'react';
 import AuditTable from '../components/AuditTable.jsx';
 import ErrorMessage from '../components/ErrorMessage.jsx';
 import Loading from '../components/Loading.jsx';
+import Pagination from '../components/Pagination.jsx';
 import { useLoader } from '../hooks/useLoader.js';
 import { auditApi, usersApi } from '../services/api.js';
 import { ACTION_GROUPS, actionLabel } from '../utils/audit.js';
 import { byId } from '../utils/users.js';
 
-const LIMITS = [100, 250, 500];
+const PAGE_SIZES = [10, 100, 250, 500];
+const NO_FILTERS = {
+  q: '', type: '', from: '', to: '',
+};
+
+async function loadPeople() {
+  const [active, archived] = await Promise.all([usersApi.list(false), usersApi.list(true)]);
+  return byId([...active, ...archived]);
+}
 
 /**
- * The whole audit log, newest first, searchable and filterable by type of change and date.
+ * The whole audit log, newest first, searchable and filterable by type of change and date, in pages of 10 to 500
+ * entries with page controls above and below the list.
  * @returns {JSX.Element} The audit log page.
  */
 function AuditLogPage() {
-  const [draft, setDraft] = useState({
-    q: '', type: '', from: '', to: '', limit: 100,
-  });
-  const [filters, setFilters] = useState(draft);
+  const [draft, setDraft] = useState(NO_FILTERS);
+  const [filters, setFilters] = useState(NO_FILTERS);
+  const [perPage, setPerPage] = useState(100);
+  const [page, setPage] = useState(1);
 
-  const load = useCallback(async () => {
+  const people = useLoader(useCallback(loadPeople, []));
+  const load = useCallback(() => {
     const actions = filters.type.startsWith('group:') ? ACTION_GROUPS[filters.type.slice(6)]
       : filters.type ? [filters.type] : [];
-    const [entries, active, archived] = await Promise.all([
-      auditApi.list({
-        q: filters.q.trim(), action: actions, from: filters.from, to: filters.to, limit: filters.limit,
-      }),
-      usersApi.list(false),
-      usersApi.list(true),
-    ]);
-    return { entries, users: byId([...active, ...archived]) };
-  }, [filters]);
+    return auditApi.page({
+      q: filters.q.trim(), action: actions, from: filters.from, to: filters.to, limit: perPage, offset: (page - 1) * perPage,
+    });
+  }, [filters, perPage, page]);
   const { data, error, loading, reload } = useLoader(load);
 
   const set = (field) => (event) => setDraft((current) => ({ ...current, [field]: event.target.value }));
@@ -39,16 +45,27 @@ function AuditLogPage() {
   const apply = (event) => {
     event.preventDefault();
     if (!dateError) {
-      setFilters({ ...draft, limit: Number(draft.limit) });
+      setFilters(draft);
+      setPage(1);
     }
   };
   const clear = () => {
-    const empty = {
-      q: '', type: '', from: '', to: '', limit: 100,
-    };
-    setDraft(empty);
-    setFilters(empty);
+    setDraft(NO_FILTERS);
+    setFilters(NO_FILTERS);
+    setPage(1);
   };
+  const changePerPage = (event) => {
+    setPerPage(Number(event.target.value));
+    setPage(1);
+  };
+
+  const total = data?.total ?? 0;
+  const pages = Math.max(1, Math.ceil(total / perPage));
+  const firstShown = data && data.entries.length > 0 ? data.offset + 1 : 0;
+  const lastShown = data ? data.offset + data.entries.length : 0;
+  const pager = (where) => (
+    <Pagination page={Math.min(page, pages)} pages={pages} onChange={setPage} label={`Audit log pages, ${where}`} disabled={loading} />
+  );
 
   return (
     <main className="page">
@@ -80,10 +97,10 @@ function AuditLogPage() {
           To
           <input id="audit-to" type="date" value={draft.to} min={draft.from || undefined} onChange={set('to')} aria-invalid={Boolean(dateError)} aria-describedby={dateError ? 'audit-date-error' : undefined} />
         </label>
-        <label htmlFor="audit-limit">
-          Show
-          <select id="audit-limit" value={draft.limit} onChange={set('limit')}>
-            {LIMITS.map((limit) => <option key={limit} value={limit}>{`Latest ${limit}`}</option>)}
+        <label htmlFor="audit-per-page">
+          Per page
+          <select id="audit-per-page" value={perPage} onChange={changePerPage}>
+            {PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
           </select>
         </label>
         <div className="filter-actions">
@@ -93,12 +110,18 @@ function AuditLogPage() {
       </form>
       {dateError && <p className="field-error" id="audit-date-error">{dateError}</p>}
 
-      <ErrorMessage error={error} onRetry={reload} />
-      {loading && <Loading>Loading the audit log…</Loading>}
-      {data && (
+      <ErrorMessage error={error ?? people.error} onRetry={error ? reload : people.reload} />
+      {(loading || people.loading) && !(data && people.data) && <Loading>Loading the audit log…</Loading>}
+      {data && people.data && (
         <>
-          <p className="muted">{`${data.entries.length} ${data.entries.length === 1 ? 'entry' : 'entries'}${data.entries.length === filters.limit ? ' (more may exist; narrow the filters or show more)' : ''}`}</p>
-          <AuditTable entries={data.entries} names={{ users: data.users }} empty="No entries match these filters." />
+          <div className="pagination-bar">
+            <p className="muted" role="status">
+              {total === 0 ? 'No entries' : `Showing ${firstShown}–${lastShown} of ${total} ${total === 1 ? 'entry' : 'entries'}`}
+            </p>
+            {pager('top')}
+          </div>
+          <AuditTable entries={data.entries} names={{ users: people.data }} empty="No entries match these filters." />
+          {data.entries.length > 0 && <div className="pagination-bar bottom">{pager('bottom')}</div>}
         </>
       )}
     </main>

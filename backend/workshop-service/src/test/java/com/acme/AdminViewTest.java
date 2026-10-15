@@ -138,6 +138,27 @@ class AdminViewTest {
 
     /** The details of the newest audit entry matching the query. */
     @Test
+    void theAuditLogComesInPagesWithTheTotal() {
+        addMilestone("Test");
+        addMilestone("Launch");
+        addMilestone("Review");
+        List<JsonElement> all = body(send("GET", "/audit?limit=500", null)).getAsJsonArray().asList();
+        JsonObject first = body(send("GET", "/audit/page?limit=3", null)).getAsJsonObject();
+        assertEquals(all.size(), first.get("total").getAsInt());
+        assertEquals(all.subList(0, 3), first.getAsJsonArray("entries").asList());
+        // The last page holds what is left: here, the oldest entry alone.
+        int lastOffset = all.size() - 1;
+        JsonObject last = body(send("GET", "/audit/page?limit=3&offset=" + lastOffset, null)).getAsJsonObject();
+        assertEquals(List.of(all.get(lastOffset)), last.getAsJsonArray("entries").asList());
+        assertEquals(lastOffset, last.get("offset").getAsInt());
+        // Filters apply to the total too.
+        assertEquals(5, body(send("GET", "/audit/page?limit=10&action=milestone_added", null)).getAsJsonObject()
+                .get("total").getAsInt());
+        assertEquals("offset must not be negative", error(send("GET", "/audit/page?offset=-1", null)));
+        assertEquals("offset must be a whole number", error(send("GET", "/audit/page?offset=two", null)));
+    }
+
+    @Test
     void timeEntriesAndTeamMovesAreLoggedByName() {
         assertEquals(201, status(send("POST", "/projects/" + projectId + "/milestones/" + designId + "/time",
                 "{\"hours\": 1}")));

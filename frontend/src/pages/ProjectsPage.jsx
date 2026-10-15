@@ -10,13 +10,14 @@ import ProjectPreview from '../components/ProjectPreview.jsx';
 import { ChevronIcon, MagnifierIcon } from '../components/Icons.jsx';
 import StatusAge from '../components/StatusAge.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
+import Workload from '../components/Workload.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useLoader } from '../hooks/useLoader.js';
 import { useToggleSet } from '../hooks/useToggleSet.js';
 import { navigate } from '../hooks/useHashRoute.js';
 import { projectsApi } from '../services/api.js';
 import { loadProjectsAndPeople } from '../services/projectData.js';
-import { availability, projectRows } from '../utils/projects.js';
+import { availability, projectRows, workloadByEmployee } from '../utils/projects.js';
 import {
   STATUSES, formatDate, formatHours, formatTimestamp, statusLabel,
 } from '../utils/format.js';
@@ -103,6 +104,13 @@ function ProjectsPage() {
         <h1>{isAdmin ? 'Projects' : 'My Projects'}</h1>
         {isAdmin && <button type="button" className="primary" onClick={() => setCreating(true)} disabled={!data}>New Project</button>}
       </div>
+
+      {isEmployee && data && (
+        <p className="your-workload">
+          <span className="muted">Your workload: </span>
+          <Workload load={workloadByEmployee(data.active).get(user.id)} />
+        </p>
+      )}
 
       <div className="filters">
         <label htmlFor="projects-search">

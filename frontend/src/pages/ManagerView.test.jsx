@@ -151,6 +151,7 @@ describe('manager view', () => {
     expect(eli.textContent).toContain('eli@acme.com');
     expect(eli.textContent).toContain('Developer');
     expect(eli.textContent).toContain('Apollo · Design');
+    expect(eli.textContent).toContain('10 h across 1 milestone');
     expect(screen.getByText('Sam Support').closest('tr').textContent).toContain('Not assigned');
     expect(screen.queryByText(/salary/i)).toBeNull();
 

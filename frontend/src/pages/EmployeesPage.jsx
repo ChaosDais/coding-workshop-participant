@@ -4,6 +4,8 @@ import {
 import EmployeeWork from '../components/EmployeeWork.jsx';
 import ErrorMessage from '../components/ErrorMessage.jsx';
 import { ChevronIcon } from '../components/Icons.jsx';
+import ManagerWork from '../components/ManagerWork.jsx';
+import Workload from '../components/Workload.jsx';
 import Loading from '../components/Loading.jsx';
 import Modal from '../components/Modal.jsx';
 import ResetPasswordForm from '../components/ResetPasswordForm.jsx';
@@ -11,18 +13,23 @@ import UserForm from '../components/UserForm.jsx';
 import { useLoader } from '../hooks/useLoader.js';
 import { useToggleSet } from '../hooks/useToggleSet.js';
 import { useAuth } from '../auth/AuthContext.jsx';
-import { usersApi } from '../services/api.js';
+import { projectsApi, usersApi } from '../services/api.js';
 import { ROLES, formatMoney, roleLabel } from '../utils/format.js';
+import { workloadByEmployee } from '../utils/projects.js';
 import { byId, filterUsers } from '../utils/users.js';
 
 async function loadPeople() {
-  const [active, archived] = await Promise.all([usersApi.list(false), usersApi.list(true)]);
-  return { active, archived };
+  const [active, archived, projects] = await Promise.all([usersApi.list(false), usersApi.list(true),
+    projectsApi.list(false)]);
+  return { active, archived, projects };
 }
 
 /**
- * Everyone with an account: employees, managers and admins, with their email, id, job and salary.
+ * Everyone with an account: employees, managers and admins, with their email, id, job and salary, and each
+ * employee's workload.
  * Admins can search, filter by role, add, edit, archive and restore people, and set someone's password.
+ * Opening an employee shows their assignments and logged time; opening a manager shows their projects, with
+ * milestones and assignees, and their team.
  * @returns {JSX.Element} The employees page.
  */
 function EmployeesPage() {
@@ -38,6 +45,7 @@ function EmployeesPage() {
   const [expanded, toggle] = useToggleSet();
 
   const everyone = useMemo(() => (data ? byId([...data.active, ...data.archived]) : new Map()), [data]);
+  const workloads = useMemo(() => workloadByEmployee(data?.projects ?? []), [data]);
   const managers = data ? data.active.filter((user) => user.role === 'MANAGER') : [];
   const rows = data ? filterUsers([...data.active, ...(showArchived ? data.archived : [])], { search, role }) : [];
 
@@ -108,6 +116,7 @@ function EmployeesPage() {
                 <th scope="col">ID</th>
                 <th scope="col">Role</th>
                 <th scope="col">Job</th>
+                <th scope="col">Workload</th>
                 <th scope="col" className="numeric">Salary</th>
                 <th scope="col">Manager</th>
                 <th scope="col"><span className="visually-hidden">Actions</span></th>
@@ -115,8 +124,8 @@ function EmployeesPage() {
             </thead>
             <tbody>
               {rows.map((person) => {
-                // Employees open to show their assignments and logged time.
-                const expandable = person.role === 'EMPLOYEE';
+                // Employees open to show their work; managers their projects and team.
+                const expandable = person.role === 'EMPLOYEE' || person.role === 'MANAGER';
                 const open = expandable && expanded.has(person.id);
                 const classes = [person.archived && 'archived', open && 'expanded', !expandable && 'static'].filter(Boolean).join(' ');
                 return (
@@ -141,6 +150,7 @@ function EmployeesPage() {
                       <td><code title={person.id}>{person.id.slice(0, 8)}</code></td>
                       <td>{roleLabel(person.role)}</td>
                       <td>{person.jobType ?? <span className="muted">—</span>}</td>
+                      <td>{person.role === 'EMPLOYEE' ? <Workload load={workloads.get(person.id)} /> : <span className="muted">—</span>}</td>
                       <td className="numeric">{formatMoney(person.salary)}</td>
                       <td>{person.managerId ? everyone.get(person.managerId)?.name ?? '—' : <span className="muted">—</span>}</td>
                       <td className="row-actions" onClick={(event) => event.stopPropagation()}>
@@ -165,7 +175,10 @@ function EmployeesPage() {
                     </tr>
                     {open && (
                       <tr className="preview-row" id={`work-${person.id}`}>
-                        <td colSpan={8}><EmployeeWork person={person} /></td>
+                        <td colSpan={9}>
+                          {person.role === 'MANAGER' ? <ManagerWork manager={person} people={everyone} projects={data.projects} workloads={workloads} />
+                            : <EmployeeWork person={person} shares={workloads.get(person.id)?.shares} />}
+                        </td>
                       </tr>
                     )}
                     </Fragment>

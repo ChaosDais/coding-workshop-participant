@@ -138,6 +138,11 @@ class PostgresRepositoriesTest {
                 assertEquals(List.of(older), reopened.find(new AuditQuery(null, null, null, null, null, "100%_", 10)));
                 assertEquals(List.of(), reopened.find(new AuditQuery(null, null, null, null, null, "1%0", 10)));
                 assertEquals(List.of(entry), reopened.find(AuditQuery.recent(1)));
+                // Pages: skip the first entries, and count all matches regardless of the page.
+                AuditQuery secondPage = new AuditQuery(null, null, null, null, null, null, 2, 2);
+                assertEquals(List.of(older), reopened.find(secondPage));
+                assertEquals(3, reopened.count(secondPage));
+                assertEquals(1, reopened.count(new AuditQuery(null, "m1", null, null, null, null, 1)));
             } finally {
                 statement.execute("DROP SCHEMA " + schema + " CASCADE");
             }

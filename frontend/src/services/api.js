@@ -238,4 +238,11 @@ export const auditApi = {
   list: (filters = {}) => request('GET', `/audit${queryString({
     ...filters, action: filters.action?.length ? filters.action.join(',') : undefined,
   })}`),
+  /**
+   * One page: the same filters plus offset (entries to skip). Resolves to {entries, total, offset, limit}.
+   * @param {object} filters As for list, plus offset.
+   */
+  page: (filters = {}) => request('GET', `/audit/page${queryString({
+    ...filters, action: filters.action?.length ? filters.action.join(',') : undefined,
+  })}`),
 };

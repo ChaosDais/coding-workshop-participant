@@ -14,9 +14,10 @@ import java.util.Objects;
  * @param to          entries on or before this day (UTC)
  * @param text        entries whose action, actor or details contain this text, ignoring case
  * @param limit       at most this many entries, 1 to {@value #MAX_LIMIT}
+ * @param offset      skip this many matching entries first, for pages after the first
  */
 public record AuditQuery(String projectId, String milestoneId, List<String> actions, LocalDate from, LocalDate to,
-                         String text, int limit) {
+                         String text, int limit, int offset) {
     public static final int DEFAULT_LIMIT = 100;
     public static final int MAX_LIMIT = 500;
 
@@ -32,6 +33,15 @@ public record AuditQuery(String projectId, String milestoneId, List<String> acti
         if (limit < 1 || limit > MAX_LIMIT) {
             throw new IllegalArgumentException("limit must be between 1 and " + MAX_LIMIT);
         }
+        if (offset < 0) {
+            throw new IllegalArgumentException("offset must not be negative");
+        }
+    }
+
+    /** The first {@code limit} matching entries. */
+    public AuditQuery(String projectId, String milestoneId, List<String> actions, LocalDate from, LocalDate to,
+                      String text, int limit) {
+        this(projectId, milestoneId, actions, from, to, text, limit, 0);
     }
 
     /** The most recent entries, without filters. */

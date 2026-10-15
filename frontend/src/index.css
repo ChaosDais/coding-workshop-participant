@@ -211,8 +211,9 @@ th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; color
 tbody tr:last-child td { border-bottom: none; }
 td select { width: auto; padding: 0.2rem 0.4rem; }
 .numeric { text-align: right; white-space: nowrap; }
-table.clickable tbody tr { cursor: pointer; }
-table.clickable tbody tr:hover, tr[aria-selected='true'] { background: var(--surface-muted); }
+/* Only the table's own rows: tables nested in an opened row are not clickable. */
+table.clickable > tbody > tr { cursor: pointer; }
+table.clickable > tbody > tr:hover, tr[aria-selected='true'] { background: var(--surface-muted); }
 tr.archived td { color: var(--text-muted); }
 /* Completed projects sit at the bottom of the list, greyed out so open work stands out. */
 tr.completed td { color: var(--text-muted); opacity: 0.7; }
@@ -429,10 +430,10 @@ tr.mine td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
   color: var(--text-muted);
 }
 .icon-link:hover, .icon-link:focus-visible { color: var(--accent); background: var(--accent-soft); }
-table.clickable tbody tr.expanded, table.clickable tbody tr.expanded:hover { background: var(--accent-soft); }
-table.clickable tbody tr.expanded td { border-bottom-color: transparent; }
-table.clickable tbody tr.preview-row { cursor: default; }
-table.clickable tbody tr.preview-row:hover { background: none; }
+table.clickable > tbody > tr.expanded, table.clickable > tbody > tr.expanded:hover { background: var(--accent-soft); }
+table.clickable > tbody > tr.expanded > td { border-bottom-color: transparent; }
+table.clickable > tbody > tr.preview-row { cursor: default; }
+table.clickable > tbody > tr.preview-row:hover { background: none; }
 .project-preview { display: grid; gap: 0.6rem; padding: 0.2rem 0 0.6rem 1.4rem; }
 .preview-description { margin: 0; white-space: pre-wrap; }
 .project-preview > p.muted { margin: 0; }
@@ -485,8 +486,8 @@ tr.time-row td { padding-top: 0; }
 .choice-sample { font-weight: 600; color: var(--text-muted); line-height: 1; }
 
 /* Employees page: a person's work, opened in place */
-table.clickable tbody tr.static { cursor: default; }
-table.clickable tbody tr.static:hover { background: none; }
+table.clickable > tbody > tr.static { cursor: default; }
+table.clickable > tbody > tr.static:hover { background: none; }
 .employee-work { display: grid; gap: 0.9rem; padding: 0.2rem 0 0.6rem 1.4rem; }
 .employee-work-total { margin: 0; }
 .employee-work-project { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow-x: auto; }
@@ -494,5 +495,18 @@ table.clickable tbody tr.static:hover { background: none; }
 .employee-work-hours { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; }
 table.compact th, table.compact td { padding: 0.4rem 0.8rem; }
 table.compact tbody tr:last-child td { border-bottom: 0; }
-table.compact tbody tr { cursor: default; }
-table.compact tbody tr:hover { background: none; }
+.employee-work > section { display: grid; gap: 0.6rem; }
+.employee-work-empty { margin: 0; padding: 0.5rem 0.8rem; }
+
+/* Workload: an employee's share of their unfinished milestones' expected hours */
+.workload { display: inline-flex; align-items: baseline; gap: 0.35rem; flex-wrap: wrap; }
+.your-workload { margin: 0 0 1rem; }
+
+/* Page controls, above and below long lists such as the audit log */
+.pagination-bar { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; flex-wrap: wrap; margin: 0.6rem 0; }
+.pagination-bar p { margin: 0; }
+.pagination-bar.bottom { justify-content: flex-end; }
+.pagination { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+.pagination button { min-width: 2.2rem; padding: 0.3rem 0.55rem; }
+.pagination-page { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; }
+.pagination-page input { width: 4.5rem; padding: 0.3rem 0.4rem; text-align: center; }

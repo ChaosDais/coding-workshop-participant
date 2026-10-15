@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  availability, blockingMilestones, openMilestoneByEmployee, projectRows, sortProjects,
+  availability, blockingMilestones, openMilestoneByEmployee, projectRows, sortProjects, workloadByEmployee,
 } from './projects.js';
 
 const projects = new Map([
@@ -99,5 +99,35 @@ describe('openMilestoneByEmployee', () => {
     };
     expect([...openMilestoneByEmployee(project)]).toEqual([['e1', 'Design'], ['e2', 'Build']]);
     expect([...openMilestoneByEmployee(project, 'a')]).toEqual([['e2', 'Build']]);
+  });
+});
+
+describe('workloadByEmployee', () => {
+  const milestone = (id, status, expectedHours, assignedEmployees) => ({
+    id, status, expectedHours, assignedEmployees,
+  });
+
+  it('splits each unfinished milestone\'s expected hours between the people assigned to it', () => {
+    const workloads = workloadByEmployee([
+      {
+        status: 'IN_PROGRESS',
+        milestones: [
+          milestone('m1', 'IN_PROGRESS', 30, ['ana', 'ben', 'cy']),
+          milestone('m2', 'TODO', 8, ['ana']),
+          milestone('m3', 'AWAITING_REVIEW', 4, ['ben', 'cy']),
+          milestone('m4', 'COMPLETE', 100, ['ana']),
+          milestone('m5', 'TODO', undefined, ['ana']),
+        ],
+      },
+      // Milestones of a complete project no longer count.
+      { status: 'COMPLETE', milestones: [milestone('m6', 'TODO', 50, ['ana'])] },
+    ]);
+    const ana = workloads.get('ana');
+    expect(ana.hours).toBe(18);
+    expect(ana.milestones).toBe(3);
+    expect(ana.unestimated).toBe(1);
+    expect([...ana.shares]).toEqual([['m1', 10], ['m2', 8]]);
+    expect(workloads.get('ben').hours).toBe(12);
+    expect(workloads.has('nobody')).toBe(false);
   });
 });

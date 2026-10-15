@@ -153,3 +153,38 @@ export function timeInStatus(item, now, thresholds = DEFAULT_BOTTLENECK_THRESHOL
   }
   return { days, notable: Boolean(reason), reason };
 }
+
+/**
+ * Each employee's workload: their share of the expected hours of the unfinished milestones they are assigned to.
+ * A milestone's expected hours are split evenly between everyone assigned to it. Complete milestones and
+ * milestones of complete projects do not count; milestones without expected hours are counted separately.
+ * @param {{status: string, milestones: {id: string, status: string, expectedHours?: number,
+ *   assignedEmployees: string[]}[]}[]} projects Active projects.
+ * @returns {Map<string, {hours: number, milestones: number, unestimated: number, shares: Map<string, number>}>}
+ *   By employee id: total hours, how many milestones count, how many lack an estimate, and the share of each
+ *   estimated milestone by milestone id.
+ */
+export function workloadByEmployee(projects) {
+  const workloads = new Map();
+  projects.filter((project) => project.status !== 'COMPLETE').forEach((project) => {
+    project.milestones.filter((milestone) => milestone.status !== 'COMPLETE').forEach((milestone) => {
+      const people = milestone.assignedEmployees;
+      const estimated = milestone.expectedHours !== undefined && milestone.expectedHours !== null;
+      people.forEach((id) => {
+        const load = workloads.get(id) ?? {
+          hours: 0, milestones: 0, unestimated: 0, shares: new Map(),
+        };
+        load.milestones += 1;
+        if (estimated) {
+          const share = Number(milestone.expectedHours) / people.length;
+          load.hours += share;
+          load.shares.set(milestone.id, share);
+        } else {
+          load.unestimated += 1;
+        }
+        workloads.set(id, load);
+      });
+    });
+  });
+  return workloads;
+}

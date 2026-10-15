@@ -6,8 +6,10 @@ import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 
 import java.lang.reflect.Type;
+import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -44,6 +46,61 @@ public class PostgresAuditRepository implements AuditRepository {
 
     @Override
     public List<AuditEntry> find(AuditQuery query) {
+        Filter filter = filter(query);
+        String sql = "SELECT id, action, actor, details, occurred_at FROM audit_entries" + filter.where()
+                + " ORDER BY occurred_at DESC LIMIT ? OFFSET ?";
+        return database.run(connection -> {
+            List<AuditEntry> entries = new ArrayList<>();
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                int index = filter.bind(connection, statement);
+                statement.setInt(index++, query.limit());
+                statement.setInt(index, query.offset());
+                try (ResultSet row = statement.executeQuery()) {
+                    while (row.next()) {
+                        entries.add(new AuditEntry(
+                                row.getString("id"),
+                                row.getString("action"),
+                                row.getString("actor"),
+                                GSON.fromJson(row.getString("details"), DETAILS_TYPE),
+                                row.getObject("occurred_at", OffsetDateTime.class).toInstant()));
+                    }
+                }
+            }
+            return entries;
+        });
+    }
+
+    @Override
+    public int count(AuditQuery query) {
+        Filter filter = filter(query);
+        return database.run(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "SELECT count(*) FROM audit_entries" + filter.where())) {
+                filter.bind(connection, statement);
+                try (ResultSet row = statement.executeQuery()) {
+                    row.next();
+                    return row.getInt(1);
+                }
+            }
+        });
+    }
+
+    /** The query's filters as a WHERE clause and the values for its placeholders. */
+    private record Filter(String where, List<Object> values, List<String> actions) {
+        /** Sets the placeholders; returns the index of the next one. */
+        int bind(Connection connection, PreparedStatement statement) throws SQLException {
+            int index = 1;
+            for (Object value : values) {
+                statement.setObject(index++, value);
+            }
+            if (!actions.isEmpty()) {
+                statement.setArray(index++, connection.createArrayOf("text", actions.toArray()));
+            }
+            return index;
+        }
+    }
+
+    private static Filter filter(AuditQuery query) {
         List<String> conditions = new ArrayList<>();
         List<Object> values = new ArrayList<>();
         if (query.projectId() != null) {
@@ -73,31 +130,6 @@ public class PostgresAuditRepository implements AuditRepository {
         if (!query.actions().isEmpty()) {
             where += (where.isEmpty() ? " WHERE " : " AND ") + "action = ANY (?)";
         }
-        String sql = "SELECT id, action, actor, details, occurred_at FROM audit_entries" + where
-                + " ORDER BY occurred_at DESC LIMIT ?";
-        return database.run(connection -> {
-            List<AuditEntry> entries = new ArrayList<>();
-            try (PreparedStatement statement = connection.prepareStatement(sql)) {
-                int index = 1;
-                for (Object value : values) {
-                    statement.setObject(index++, value);
-                }
-                if (!query.actions().isEmpty()) {
-                    statement.setArray(index++, connection.createArrayOf("text", query.actions().toArray()));
-                }
-                statement.setInt(index, query.limit());
-                try (ResultSet row = statement.executeQuery()) {
-                    while (row.next()) {
-                        entries.add(new AuditEntry(
-                                row.getString("id"),
-                                row.getString("action"),
-                                row.getString("actor"),
-                                GSON.fromJson(row.getString("details"), DETAILS_TYPE),
-                                row.getObject("occurred_at", OffsetDateTime.class).toInstant()));
-                    }
-                }
-            }
-            return entries;
-        });
+        return new Filter(where, values, query.actions());
     }
 }
