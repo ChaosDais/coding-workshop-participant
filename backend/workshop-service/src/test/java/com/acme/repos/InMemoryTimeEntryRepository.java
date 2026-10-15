@@ -81,6 +81,14 @@ public class InMemoryTimeEntryRepository implements TimeEntryRepository {
     }
 
     @Override
+    public synchronized List<TimeEntry> findLoggedForUser(String userId) {
+        return entries.stream()
+                .filter(entry -> entry.userId().equals(userId) && entry.hours() != null)
+                .sorted(Comparator.comparing(TimeEntry::loggedAt))
+                .toList();
+    }
+
+    @Override
     public synchronized Map<String, BigDecimal> totalCostByProject() {
         Map<String, BigDecimal> totals = new HashMap<>();
         entries.stream().filter(entry -> entry.cost() != null)

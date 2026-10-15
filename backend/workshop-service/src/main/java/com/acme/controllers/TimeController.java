@@ -12,7 +12,8 @@ import java.math.BigDecimal;
 /**
  * Time logging. Everyone logs their own hours or runs a timer (employees on their milestones, managers on their
  * projects, admins anywhere); everyone who can see a milestone can list
- * its logged time (pay figures for admins only, checked in {@link TimeService}); admins correct entries.
+ * its logged time (pay figures for admins only, checked in {@link TimeService}); admins correct entries; and a
+ * person's assignments and logged time by project and milestone, for the Employees page.
  */
 public class TimeController implements Controller {
     /** Anyone signed in logs their own time; TimeService decides on which milestones. */
@@ -49,6 +50,9 @@ public class TimeController implements Controller {
                 .get("/timer", WORKERS, request -> service.runningTimer(request.user())
                         .map(ApiResponse::ok).orElseGet(ApiResponse::noContent))
                 .post("/timer/stop", WORKERS, request -> ApiResponse.ok(service.stopTimer(request.user())))
+                // Scoped by role in the service: admins anyone, managers their team, employees themselves.
+                .get("/users/{id}/time", Access.SIGNED_IN, request -> ApiResponse.ok(
+                        service.contributions(request.param("id"), request.user())))
                 .put("/time/{id}", Access.roles(Role.ADMIN), request -> {
                     Correction correction = request.body(Correction.class);
                     return ApiResponse.ok(service.correct(request.param("id"), correction.hours(), correction.note(),

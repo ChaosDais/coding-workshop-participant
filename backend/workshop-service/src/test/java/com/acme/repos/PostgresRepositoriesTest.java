@@ -266,6 +266,8 @@ class PostgresRepositoriesTest {
                 assertTrue(entries.findRunning("e1").isEmpty());
                 assertEquals(5.0, projects.findById("p1").orElseThrow().milestones().get(0).progressTime());
                 assertEquals(List.of(manual, stopped), entries.findForMilestone("p1", "m1"));
+                assertEquals(List.of(manual, stopped), entries.findLoggedForUser("e1"));
+                assertTrue(entries.findLoggedForUser("someone-else").isEmpty());
                 assertEquals(0, new BigDecimal("200.00").compareTo(entries.totalCostByProject().get("p1")));
 
                 // A correction moves progress by the difference, and only applies to the hours it was based on.

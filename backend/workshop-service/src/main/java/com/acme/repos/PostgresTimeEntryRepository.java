@@ -117,6 +117,12 @@ public class PostgresTimeEntryRepository implements TimeEntryRepository {
     }
 
     @Override
+    public List<TimeEntry> findLoggedForUser(String userId) {
+        return query("SELECT " + COLUMNS + " FROM time_entries WHERE user_id = ? AND hours IS NOT NULL"
+                + " ORDER BY logged_at", userId);
+    }
+
+    @Override
     public Map<String, BigDecimal> totalCostByProject() {
         return database.run(connection -> {
             Map<String, BigDecimal> totals = new HashMap<>();

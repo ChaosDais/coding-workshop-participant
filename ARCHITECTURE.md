@@ -82,7 +82,8 @@ frontend/
   src/pages/                        SignIn, ChangePassword (forced change only), Options (tabs: Account,
                                     Appearance, System for admins), Projects and ProjectDetail (every role;
                                     employees get a reduced view), Employees and AuditLog (admins), Team
-                                    (managers), ApiTester (#/tester)
+                                    (managers), ApiTester (#/tester); on Employees and Team, an employee's
+                                    row opens to show their work (EmployeeWork)
   src/timer/TimerContext.jsx        the signed-in user's running timer, shared by the timer bar and project view
   src/components/                   NavBar (Options is the gear icon), Loading (spinner), forms (Project,
                                     Milestone, User, ResetPassword), Modal, Field, AuditTable, AssigneeList,
@@ -236,6 +237,7 @@ Authorization happens in two layers, so a missing check in one is caught by the 
 | `GET /timer`, `POST /timer/stop` | own timer | own timer | own timer | — |
 | `GET /projects/{id}/milestones/{mid}/time` | ✓ | scoped | own entries on own milestones | — |
 | `PUT /time/{id}` (correct an entry) | ✓ | — | — | — |
+| `GET /users/{id}/time` (assignments and hours by project and milestone) | ✓ | own team, own projects | themselves | — |
 | `GET /audit` | ✓ | — | — | — |
 | `GET /settings/bottlenecks` | ✓ | ✓ | ✓ | — |
 | `PUT /settings/bottlenecks` | ✓ | — | — | — |

@@ -35,6 +35,9 @@ public interface TimeEntryRepository {
     /** Every entry on a milestone, running timers included, oldest first. */
     List<TimeEntry> findForMilestone(String projectId, String milestoneId);
 
+    /** A person's finished entries, everywhere, oldest first; running timers are left out. */
+    List<TimeEntry> findLoggedForUser(String userId);
+
     /** Total cost of the logged time, by project id; projects without logged time are absent. */
     Map<String, BigDecimal> totalCostByProject();
 }

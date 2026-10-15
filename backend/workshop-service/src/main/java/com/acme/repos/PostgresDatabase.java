@@ -99,6 +99,8 @@ public class PostgresDatabase {
             """
             CREATE UNIQUE INDEX IF NOT EXISTS time_entries_one_running_timer
                 ON time_entries (user_id) WHERE source = 'TIMER' AND ended_at IS NULL""",
+            // For a person's time across projects, on the Employees page.
+            "CREATE INDEX IF NOT EXISTS time_entries_by_user ON time_entries (user_id, project_id, milestone_id)",
             // Upgrades tables created by earlier versions; rows are archived, never deleted.
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS job_type TEXT",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS salary NUMERIC",

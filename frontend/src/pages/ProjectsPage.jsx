@@ -12,6 +12,7 @@ import StatusAge from '../components/StatusAge.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useLoader } from '../hooks/useLoader.js';
+import { useToggleSet } from '../hooks/useToggleSet.js';
 import { navigate } from '../hooks/useHashRoute.js';
 import { projectsApi } from '../services/api.js';
 import { loadProjectsAndPeople } from '../services/projectData.js';
@@ -43,19 +44,9 @@ function ProjectsPage() {
   const { data, error, loading, reload } = useLoader(load);
   const [filters, setFilters] = useState(NO_FILTERS);
   const [creating, setCreating] = useState(false);
-  const [expanded, setExpanded] = useState(() => new Set());
+  const [expanded, toggle] = useToggleSet();
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState();
-
-  const toggle = (id) => setExpanded((current) => {
-    const next = new Set(current);
-    if (next.has(id)) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
-    return next;
-  });
 
   const act = async (action) => {
     setActionError(undefined);

@@ -187,6 +187,8 @@ export const timeApi = {
   },
   start: (projectId, milestoneId) => request('POST', `/projects/${projectId}/milestones/${milestoneId}/timer`),
   stop: () => request('POST', '/timer/stop'),
+  /** A person's assignments and logged hours by project and milestone. */
+  forUser: (userId) => request('GET', `/users/${userId}/time`),
 };
 
 export const settingsApi = {

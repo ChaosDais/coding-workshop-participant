@@ -7,6 +7,9 @@ import com.acme.models.CompletionStatus;
 import com.acme.models.Milestone;
 import com.acme.models.Project;
 import com.acme.models.Role;
+import com.acme.models.TimeContributions;
+import com.acme.models.TimeContributions.MilestoneContribution;
+import com.acme.models.TimeContributions.ProjectContribution;
 import com.acme.models.TimeEntry;
 import com.acme.models.User;
 import com.acme.repos.ProjectRepository;
@@ -18,11 +21,14 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 /**
  * People log their own time on milestones, either as a number of hours or with a timer: employees on milestones
@@ -167,6 +173,88 @@ public class TimeService {
                         .map(TimeEntry::withoutPay).toList();
             }
         };
+    }
+
+    /**
+     * What a person is assigned to and the time they have logged, by project and milestone. Admins see anyone's,
+     * across every project; a manager sees their own team's, on the projects they manage; an employee sees only
+     * their own. Archived projects and milestones appear only where time was logged on them.
+     */
+    public TimeContributions contributions(String userId, User actor) {
+        User person = users.findById(userId).orElseThrow(() -> new NotFoundException("This user was not found"));
+        Predicate<Project> inScope = switch (actor.role()) {
+            case ADMIN -> project -> true;
+            case MANAGER -> {
+                if (!actor.id().equals(person.managerId()) && !actor.id().equals(person.id())) {
+                    throw new ForbiddenException("Access denied");
+                }
+                yield project -> actor.id().equals(project.manager());
+            }
+            case EMPLOYEE -> {
+                if (!actor.id().equals(person.id())) {
+                    throw new ForbiddenException("Access denied");
+                }
+                yield project -> true;
+            }
+        };
+
+        Map<String, List<TimeEntry>> logged = new LinkedHashMap<>();
+        for (TimeEntry entry : entries.findLoggedForUser(userId)) {
+            logged.computeIfAbsent(entry.projectId(), id -> new ArrayList<>()).add(entry);
+        }
+        List<ProjectContribution> result = new ArrayList<>();
+        for (boolean archived : new boolean[] {false, true}) {
+            for (Project project : projects.findAll(archived)) {
+                List<TimeEntry> onProject = logged.getOrDefault(project.id(), List.of());
+                boolean assigned = !archived && project.milestones().stream()
+                        .anyMatch(milestone -> milestone.assignedEmployees().contains(userId));
+                if (!inScope.test(project) || (!assigned && onProject.isEmpty())) {
+                    continue;
+                }
+                result.add(contribution(project, archived, userId, onProject));
+            }
+        }
+        result.sort(Comparator.comparing(ProjectContribution::archived)
+                .thenComparing(ProjectContribution::projectName, String.CASE_INSENSITIVE_ORDER));
+        BigDecimal total = result.stream().map(ProjectContribution::hours).reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new TimeContributions(userId, total, result);
+    }
+
+    private ProjectContribution contribution(Project project, boolean archivedProject, String userId,
+                                             List<TimeEntry> onProject) {
+        Map<String, List<TimeEntry>> byMilestone = new LinkedHashMap<>();
+        onProject.forEach(entry -> byMilestone.computeIfAbsent(entry.milestoneId(), id -> new ArrayList<>())
+                .add(entry));
+        List<MilestoneContribution> milestones = new ArrayList<>();
+        for (Milestone milestone : project.milestones()) {
+            List<TimeEntry> times = byMilestone.remove(milestone.id());
+            boolean assigned = !archivedProject && milestone.assignedEmployees().contains(userId);
+            if (assigned || times != null) {
+                milestones.add(milestoneContribution(milestone, false, assigned, times));
+            }
+        }
+        // Time logged on milestones archived since.
+        if (!byMilestone.isEmpty()) {
+            for (Milestone milestone : projects.findArchivedMilestones(project.id())) {
+                List<TimeEntry> times = byMilestone.remove(milestone.id());
+                if (times != null) {
+                    milestones.add(milestoneContribution(milestone, true, false, times));
+                }
+            }
+        }
+        BigDecimal hours = milestones.stream().map(MilestoneContribution::hours)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new ProjectContribution(project.id(), project.name(), project.status(), archivedProject, hours,
+                milestones);
+    }
+
+    private static MilestoneContribution milestoneContribution(Milestone milestone, boolean archived,
+                                                               boolean assigned, List<TimeEntry> times) {
+        List<TimeEntry> logged = times == null ? List.of() : times;
+        BigDecimal hours = logged.stream().map(TimeEntry::hours).reduce(BigDecimal.ZERO, BigDecimal::add);
+        Instant last = logged.stream().map(TimeEntry::loggedAt).max(Comparator.naturalOrder()).orElse(null);
+        return new MilestoneContribution(milestone.id(), milestone.name(), milestone.status(), archived, assigned,
+                hours, logged.size(), last);
     }
 
     /** The running timer, after closing it at 8 hours if it has run that long. */

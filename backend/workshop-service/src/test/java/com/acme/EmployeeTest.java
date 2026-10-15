@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -92,6 +93,42 @@ class EmployeeTest {
         return body(app.send("GET", "/projects/" + projectId, null, adminToken)).getAsJsonObject()
                 .getAsJsonArray("milestones").asList().stream().map(JsonElement::getAsJsonObject)
                 .filter(found -> found.get("id").getAsString().equals(milestone)).findFirst().orElseThrow();
+    }
+
+    @Test
+    void aPersonsAssignmentsAndLoggedTimeAreSummedByProjectAndMilestoneForThoseWhoMaySeeThem() {
+        assertEquals(201, status(send("POST", milestonePath(milestoneId) + "/time", "{\"hours\": 1.5}")));
+        assertEquals(201, status(send("POST", milestonePath(milestoneId) + "/time", "{\"hours\": 0.5}")));
+
+        JsonObject mine = body(app.send("GET", "/users/" + employeeId + "/time", null, adminToken)).getAsJsonObject();
+        assertEquals(0, new BigDecimal("2.00").compareTo(mine.get("totalHours").getAsBigDecimal()));
+        JsonObject apollo = mine.getAsJsonArray("projects").get(0).getAsJsonObject();
+        assertEquals("Apollo", apollo.get("projectName").getAsString());
+        JsonObject design = apollo.getAsJsonArray("milestones").get(0).getAsJsonObject();
+        assertEquals("Design", design.get("milestoneName").getAsString());
+        assertTrue(design.get("assigned").getAsBoolean());
+        assertEquals(2, design.get("entries").getAsInt());
+        assertEquals(0, new BigDecimal("2.00").compareTo(design.get("hours").getAsBigDecimal()));
+        assertEquals(1, apollo.getAsJsonArray("milestones").size());
+
+        // Assignments show even before any time is logged, across projects.
+        JsonObject teammate = body(app.send("GET", "/users/" + teammateId + "/time", null, managerToken))
+                .getAsJsonObject();
+        assertEquals(List.of("Apollo", "Gemini"), teammate.getAsJsonArray("projects").asList().stream()
+                .map(project -> project.getAsJsonObject().get("projectName").getAsString()).toList());
+        assertEquals(0, BigDecimal.ZERO.compareTo(teammate.get("totalHours").getAsBigDecimal()));
+
+        // Time logged on a milestone archived since still counts, marked as archived.
+        assertEquals(204, status(app.send("DELETE", milestonePath(milestoneId), null, adminToken)));
+        JsonObject archived = body(send("GET", "/users/" + employeeId + "/time", null)).getAsJsonObject()
+                .getAsJsonArray("projects").get(0).getAsJsonObject().getAsJsonArray("milestones").get(0)
+                .getAsJsonObject();
+        assertTrue(archived.get("archived").getAsBoolean());
+        assertFalse(archived.get("assigned").getAsBoolean());
+
+        // Managers see their own team only; employees only themselves.
+        assertEquals(403, status(app.send("GET", "/users/" + outsiderId + "/time", null, managerToken)));
+        assertEquals(403, status(send("GET", "/users/" + teammateId + "/time", null)));
     }
 
     @Test

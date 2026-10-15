@@ -1,10 +1,15 @@
-import { useCallback, useMemo, useState } from 'react';
+import {
+  Fragment, useCallback, useMemo, useState,
+} from 'react';
+import EmployeeWork from '../components/EmployeeWork.jsx';
 import ErrorMessage from '../components/ErrorMessage.jsx';
+import { ChevronIcon } from '../components/Icons.jsx';
 import Loading from '../components/Loading.jsx';
 import Modal from '../components/Modal.jsx';
 import ResetPasswordForm from '../components/ResetPasswordForm.jsx';
 import UserForm from '../components/UserForm.jsx';
 import { useLoader } from '../hooks/useLoader.js';
+import { useToggleSet } from '../hooks/useToggleSet.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { usersApi } from '../services/api.js';
 import { ROLES, formatMoney, roleLabel } from '../utils/format.js';
@@ -30,6 +35,7 @@ function EmployeesPage() {
   const [actionError, setActionError] = useState();
   const [resetting, setResetting] = useState();
   const [notice, setNotice] = useState();
+  const [expanded, toggle] = useToggleSet();
 
   const everyone = useMemo(() => (data ? byId([...data.active, ...data.archived]) : new Map()), [data]);
   const managers = data ? data.active.filter((user) => user.role === 'MANAGER') : [];
@@ -94,7 +100,7 @@ function EmployeesPage() {
 
       {data && (rows.length === 0 ? <p className="muted">No users match these filters.</p> : (
         <div className="table-wrap">
-          <table>
+          <table className="clickable">
             <thead>
               <tr>
                 <th scope="col">Name</th>
@@ -108,39 +114,63 @@ function EmployeesPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((person) => (
-                <tr key={person.id} className={person.archived ? 'archived' : undefined}>
-                  <td>
-                    {person.name}
-                    {person.archived && <span className="badge archived-badge">Archived</span>}
-                  </td>
-                  <td>{person.email}</td>
-                  <td><code title={person.id}>{person.id.slice(0, 8)}</code></td>
-                  <td>{roleLabel(person.role)}</td>
-                  <td>{person.jobType ?? <span className="muted">—</span>}</td>
-                  <td className="numeric">{formatMoney(person.salary)}</td>
-                  <td>{person.managerId ? everyone.get(person.managerId)?.name ?? '—' : <span className="muted">—</span>}</td>
-                  <td className="row-actions">
-                    {person.archived ? (
-                      <button type="button" className="link-button" onClick={() => act(() => usersApi.restore(person.id))}>Restore</button>
-                    ) : (
-                      <>
-                        <button type="button" className="link-button" onClick={() => setForm({ user: person })}>Edit</button>
-                        {person.id !== me.id && (
-                          <button type="button" className="link-button" onClick={() => { setNotice(undefined); setResetting(person); }}>
-                            Reset password
+              {rows.map((person) => {
+                // Employees open to show their assignments and logged time.
+                const expandable = person.role === 'EMPLOYEE';
+                const open = expandable && expanded.has(person.id);
+                const classes = [person.archived && 'archived', open && 'expanded', !expandable && 'static'].filter(Boolean).join(' ');
+                return (
+                  <Fragment key={person.id}>
+                    <tr className={classes || undefined} onClick={expandable ? () => toggle(person.id) : undefined}>
+                      <td>
+                        {expandable ? (
+                          <button
+                            type="button"
+                            className="expand-toggle"
+                            aria-expanded={open}
+                            aria-controls={`work-${person.id}`}
+                            onClick={(event) => { event.stopPropagation(); toggle(person.id); }}
+                          >
+                            <ChevronIcon />
+                            <span>{person.name}</span>
                           </button>
+                        ) : person.name}
+                        {person.archived && <span className="badge archived-badge">Archived</span>}
+                      </td>
+                      <td>{person.email}</td>
+                      <td><code title={person.id}>{person.id.slice(0, 8)}</code></td>
+                      <td>{roleLabel(person.role)}</td>
+                      <td>{person.jobType ?? <span className="muted">—</span>}</td>
+                      <td className="numeric">{formatMoney(person.salary)}</td>
+                      <td>{person.managerId ? everyone.get(person.managerId)?.name ?? '—' : <span className="muted">—</span>}</td>
+                      <td className="row-actions" onClick={(event) => event.stopPropagation()}>
+                        {person.archived ? (
+                          <button type="button" className="link-button" onClick={() => act(() => usersApi.restore(person.id))}>Restore</button>
+                        ) : (
+                          <>
+                            <button type="button" className="link-button" onClick={() => setForm({ user: person })}>Edit</button>
+                            {person.id !== me.id && (
+                              <button type="button" className="link-button" onClick={() => { setNotice(undefined); setResetting(person); }}>
+                                Reset password
+                              </button>
+                            )}
+                            {person.id !== me.id && (
+                              <button type="button" className="link-button danger" onClick={() => window.confirm(`Archive ${person.name}? They will be signed out and can be restored later.`) && act(() => usersApi.archive(person.id))}>
+                                Archive
+                              </button>
+                            )}
+                          </>
                         )}
-                        {person.id !== me.id && (
-                          <button type="button" className="link-button danger" onClick={() => window.confirm(`Archive ${person.name}? They will be signed out and can be restored later.`) && act(() => usersApi.archive(person.id))}>
-                            Archive
-                          </button>
-                        )}
-                      </>
+                      </td>
+                    </tr>
+                    {open && (
+                      <tr className="preview-row" id={`work-${person.id}`}>
+                        <td colSpan={8}><EmployeeWork person={person} /></td>
+                      </tr>
                     )}
-                  </td>
-                </tr>
-              ))}
+                    </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

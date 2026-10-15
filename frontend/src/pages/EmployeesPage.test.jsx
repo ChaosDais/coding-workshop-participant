@@ -32,6 +32,23 @@ beforeEach(() => {
       return { status: 204, body: undefined };
     },
     'GET /users': people,
+    'GET /users/employee-1/time': {
+      userId: 'employee-1',
+      totalHours: 3.5,
+      projects: [{
+        projectId: 'p1', projectName: 'Apollo', status: 'IN_PROGRESS', archived: false, hours: 3.5,
+        milestones: [
+          {
+            milestoneId: 'ms1', milestoneName: 'Design', status: 'IN_PROGRESS', archived: false, assigned: true,
+            hours: 3.25, entries: 2, lastLoggedAt: '2026-10-13T15:00:00Z',
+          },
+          {
+            milestoneId: 'ms0', milestoneName: 'Research', status: 'COMPLETE', archived: true, assigned: false,
+            hours: 0.25, entries: 1, lastLoggedAt: '2026-09-01T15:00:00Z',
+          },
+        ],
+      }],
+    },
     'GET /users?archived=true': [{ id: 'old-1', name: 'Olive Old', email: 'olive@acme.com', role: 'EMPLOYEE', archived: true }],
   });
 });
@@ -65,6 +82,27 @@ describe('employees page', () => {
     await userEvent.click(screen.getByLabelText('Show archived users'));
     expect(screen.getByText('Olive Old')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Restore' })).toBeTruthy();
+  });
+
+  it('opens an employee to show their assigned milestones and the time logged on each', async () => {
+    render(<AuthProvider><EmployeesPage /></AuthProvider>);
+    const eli = await screen.findByRole('button', { name: 'Eli Employee' });
+    // Only employees open; admins and managers have no assignments.
+    expect(screen.queryByRole('button', { name: 'Morgan Manager' })).toBeNull();
+
+    await userEvent.click(eli);
+    expect(eli.getAttribute('aria-expanded')).toBe('true');
+    const apollo = await screen.findByRole('region', { name: 'Apollo' });
+    expect(screen.getByText('Total logged:').closest('p').textContent).toBe('Total logged: 3 h 30 min');
+    const design = within(apollo).getByText('Design').closest('tr');
+    expect(design.textContent).toContain('3 h 15 min');
+    expect(design.textContent).toContain('2 entries');
+    const research = within(apollo).getByText('Research').closest('tr');
+    expect(research.textContent).toContain('No longer');
+    expect(within(research).getByText('Archived')).toBeTruthy();
+
+    await userEvent.click(eli);
+    expect(screen.queryByRole('region', { name: 'Apollo' })).toBeNull();
   });
 
   it('does not offer to archive your own account', async () => {

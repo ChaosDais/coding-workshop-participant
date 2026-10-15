@@ -53,6 +53,17 @@ beforeEach(() => {
   fakeBackend({
     'GET /projects': [apollo, finished],
     'GET /users': team,
+    'GET /users/e1/time': {
+      userId: 'e1',
+      totalHours: 0,
+      projects: [{
+        projectId: 'p1', projectName: 'Apollo', status: 'IN_PROGRESS', archived: false, hours: 0,
+        milestones: [{
+          milestoneId: 'ms1', milestoneName: 'Design', status: 'IN_PROGRESS', archived: false, assigned: true,
+          hours: 0, entries: 0, lastLoggedAt: null,
+        }],
+      }],
+    },
     'GET /projects/p1/milestones?archived=true': [],
     'POST /projects/p1/milestones/ms1/assignees': record('assign'),
     'DELETE /projects/p1/milestones/ms1/assignees/e1': record('unassign'),
@@ -142,5 +153,9 @@ describe('manager view', () => {
     expect(eli.textContent).toContain('Apollo · Design');
     expect(screen.getByText('Sam Support').closest('tr').textContent).toContain('Not assigned');
     expect(screen.queryByText(/salary/i)).toBeNull();
+
+    await userEvent.click(within(eli).getByRole('button', { name: 'Eli Employee' }));
+    const apollo = await screen.findByRole('region', { name: 'Apollo' });
+    expect(within(apollo).getByText('Design').closest('tr').textContent).toContain('0 min');
   });
 });

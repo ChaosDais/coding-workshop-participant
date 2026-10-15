@@ -1,9 +1,9 @@
-import { useState } from 'react';
 import PropTypes from 'prop-types';
 import HoursProgress from './HoursProgress.jsx';
 import StatusAge from './StatusAge.jsx';
 import StatusBadge from './StatusBadge.jsx';
 import { ChevronIcon } from './Icons.jsx';
+import { useToggleSet } from '../hooks/useToggleSet.js';
 import { formatDate } from '../utils/format.js';
 
 /**
@@ -22,16 +22,7 @@ import { formatDate } from '../utils/format.js';
 function ProjectPreview({
   project, usersById, showOverrun, showStatusAge = false, highlightUserId, onArchiveMilestone, busy = false,
 }) {
-  const [open, setOpen] = useState(() => new Set());
-  const toggle = (id) => setOpen((current) => {
-    const next = new Set(current);
-    if (next.has(id)) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
-    return next;
-  });
+  const [open, toggle] = useToggleSet();
 
   return (
     <div className="project-preview">
