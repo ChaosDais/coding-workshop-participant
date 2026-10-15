@@ -60,6 +60,14 @@ describe('project view', () => {
     expect(screen.getByRole('link', { name: 'Mercury' })).toBeTruthy();
   });
 
+  it('offers a way back to the project list at the top and the bottom', async () => {
+    render(<AuthProvider><TimerProvider><ProjectDetailPage projectId="p1" /></TimerProvider></AuthProvider>);
+    await screen.findByText('Crewed lunar landing');
+    const back = screen.getAllByRole('link', { name: '← Back to Projects' });
+    expect(back).toHaveLength(2);
+    back.forEach((link) => expect(link.getAttribute('href')).toBe('#/projects'));
+  });
+
   it('lists milestones with assignees and what they wait for', async () => {
     render(<AuthProvider><TimerProvider><ProjectDetailPage projectId="p1" /></TimerProvider></AuthProvider>);
     const design = (await screen.findByText('Design', { selector: 'strong' })).closest('tr');

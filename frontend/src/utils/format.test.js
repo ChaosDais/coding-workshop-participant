@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatHours } from './format.js';
+import { formatDateRange, formatHours } from './format.js';
 
 describe('formatHours', () => {
   it('shows hours and minutes, to the nearest minute', () => {
@@ -14,5 +14,12 @@ describe('formatHours', () => {
   it('shows nothing logged as 0 min', () => {
     expect(formatHours(0)).toBe('0 min');
     expect(formatHours(undefined)).toBe('0 min');
+  });
+});
+
+describe('formatDateRange', () => {
+  it('writes the year once within a year, and in full across years', () => {
+    expect(formatDateRange('2026-02-01', '2026-06-30')).toBe('Feb 1 – Jun 30, 2026');
+    expect(formatDateRange('2026-12-01', '2027-01-31')).toBe('Dec 1, 2026 – Jan 31, 2027');
   });
 });

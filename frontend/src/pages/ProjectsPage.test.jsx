@@ -41,7 +41,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 /** Lookups inside the project table, since project names also appear in the overview above it. */
-const inTable = () => within(screen.getByRole('table'));
+const inTable = () => within(screen.getByRole('table', { name: 'Projects' }));
 
 function renderPage() {
   return render(<AuthProvider><ProjectsPage /></AuthProvider>);
@@ -72,12 +72,12 @@ describe('projects page', () => {
   it('shows each project start and expected end date', async () => {
     renderPage();
     const build = (await within(await screen.findByRole('table')).findByText('Build')).closest('tr');
-    expect(within(build).getByText('Feb 1, 2026')).toBeTruthy();
-    expect(within(build).getByText('Jun 30, 2026')).toBeTruthy();
-    expect(screen.getByRole('columnheader', { name: 'Expected end' })).toBeTruthy();
+    // One column for both dates, the year written once.
+    expect(within(build).getByText('Feb 1 – Jun 30, 2026')).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Dates' })).toBeTruthy();
   });
 
-  it('hides completed projects until asked, then shows them greyed out at the bottom', async () => {
+  it('hides completed projects until asked, then shows them in pale green at the bottom', async () => {
     renderPage();
     await screen.findByRole('table');
     expect(inTable().queryByText('Launch prep')).toBeNull();
@@ -137,7 +137,7 @@ describe('projects page', () => {
     expect(rows).toEqual(['Eli Employee2 h 30 min', 'Morgan Manager · not assigned1 h']);
 
     // Clicking anywhere on the row closes it again.
-    await userEvent.click(screen.getByText('Jan 1, 2026', { selector: 'td' }));
+    await userEvent.click(screen.getAllByText('Jan 1 – Dec 31, 2026', { selector: 'td' })[0]);
     expect(screen.queryByText('Visual identity')).toBeNull();
   });
 
@@ -190,6 +190,48 @@ describe('projects page', () => {
     await userEvent.selectOptions(screen.getByLabelText('Per page'), '50');
     expect(names()).toHaveLength(23);
     expect(screen.queryByRole('navigation', { name: 'Project pages, top' })).toBeNull();
+  });
+
+  it('puts projects awaiting review in their own section above the list', async () => {
+    fakeBackend({
+      'GET /projects': [
+        project('p1', 'Design', 'IN_PROGRESS'),
+        project('p5', 'Rollout', 'AWAITING_REVIEW'),
+        project('p6', 'Docs', 'AWAITING_REVIEW'),
+      ],
+      'GET /projects?archived=true': [],
+      'GET /users': [manager],
+      'GET /users?archived=true': [],
+    });
+    renderPage();
+    const review = await screen.findByRole('region', { name: /Awaiting review/ });
+    const reviewTable = within(review).getByRole('table', { name: 'Projects awaiting review' });
+    expect(within(reviewTable).getAllByRole('button', { name: /^(Rollout|Docs)$/ })).toHaveLength(2);
+    expect(within(review).getByRole('heading').textContent).toBe('Awaiting review2');
+
+    // Not repeated in the main list, which counts only the rest.
+    const main = screen.getByRole('table', { name: 'Projects' });
+    expect(within(main).queryByText('Rollout')).toBeNull();
+    expect(within(main).getByText('Design')).toBeTruthy();
+    expect(screen.getByText('Showing 1–1 of 1 project')).toBeTruthy();
+
+    // The section follows the search like the list does.
+    await userEvent.type(screen.getByLabelText('Search'), 'roll');
+    expect(within(screen.getByRole('table', { name: 'Projects awaiting review' })).queryByText('Docs')).toBeNull();
+  });
+
+  it('keeps its search and filters when you come back to it', async () => {
+    const first = renderPage();
+    await screen.findByRole('table');
+    await userEvent.type(screen.getByLabelText('Search'), 'buil');
+    await userEvent.selectOptions(screen.getByLabelText('Per page'), '50');
+    first.unmount();
+
+    renderPage();
+    await screen.findByRole('table');
+    expect(screen.getByLabelText('Search').value).toBe('buil');
+    expect(screen.getByLabelText('Per page').value).toBe('50');
+    expect(inTable().queryByText('Design')).toBeNull();
   });
 
   it('validates a new project before creating it', async () => {

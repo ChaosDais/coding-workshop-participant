@@ -171,7 +171,7 @@ function ProjectDetailPage({ projectId }) {
 
   return (
     <main className="page">
-      <a href="#/projects" className="back-link">← All Projects</a>
+      <a href="#/projects" className="back-link">← Back to Projects</a>
       <div className="page-header">
         <h1>
           {project.name}
@@ -382,7 +382,7 @@ function ProjectDetailPage({ projectId }) {
             {archivedMilestones.data?.length > 0 && (
               <ul className="plain-list">
                 {archivedMilestones.data.map((milestone) => (
-                  <li key={milestone.id}>
+                  <li key={milestone.id} className="archived">
                     <strong>{milestone.name}</strong>
                     {' '}
                     <StatusBadge status={milestone.status} />
@@ -408,6 +408,8 @@ function ProjectDetailPage({ projectId }) {
           {history.data && <AuditTable entries={history.data} names={{ users: lookups.users, milestones: milestonesById }} />}
         </section>
       )}
+
+      <a href="#/projects" className="back-link bottom">← Back to Projects</a>
 
       {editing && (
         <Modal title={`Edit ${project.name}`} onClose={() => setEditing(false)}>

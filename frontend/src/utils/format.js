@@ -35,6 +35,30 @@ export function formatDate(date) {
   });
 }
 
+/**
+ * A compact date range: the year once when both dates share it.
+ * @param {string} start "2026-02-01".
+ * @param {string} end "2026-06-30".
+ * @returns {string} "Feb 1 – Jun 30, 2026", or "Dec 1, 2026 – Jan 31, 2027" across years.
+ */
+export function formatDateRange(start, end) {
+  if (!start || !end) {
+    return `${formatDate(start)} – ${formatDate(end)}`;
+  }
+  if (start.slice(0, 4) !== end.slice(0, 4)) {
+    return `${formatDate(start)} – ${formatDate(end)}`;
+  }
+  return `${formatDate(start).replace(/, \d{4}$/, '')} – ${formatDate(end)}`;
+}
+
+/** @param {string|undefined} timestamp ISO instant. @returns {string} The local date only, or "—". */
+export function formatTimestampDate(timestamp) {
+  if (!timestamp) {
+    return '—';
+  }
+  return new Date(timestamp).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
 /** @param {string|undefined} timestamp ISO instant. @returns {string} Local date and time, or "—". */
 export function formatTimestamp(timestamp) {
   if (!timestamp) {

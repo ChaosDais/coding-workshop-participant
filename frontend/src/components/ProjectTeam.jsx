@@ -78,7 +78,7 @@ function ProjectTeam({ project, usersById }) {
           ))}
         </tbody>
       </table>
-      {people === 0 && <p className="muted small">Nobody is assigned to this project&apos;s milestones yet.</p>}
+      {people === 0 && <p className="muted small table-note">Nobody is assigned to this project&apos;s milestones yet.</p>}
     </div>
   );
 }

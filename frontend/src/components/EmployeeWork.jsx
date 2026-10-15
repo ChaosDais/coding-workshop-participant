@@ -60,7 +60,7 @@ function EmployeeWork({ person, shares }) {
             </thead>
             <tbody>
               {project.milestones.map((milestone) => (
-                <tr key={milestone.milestoneId}>
+                <tr key={milestone.milestoneId} className={milestone.archived ? 'archived' : undefined}>
                   <td>
                     {milestone.milestoneName}
                     {milestone.archived && <span className="badge archived-badge">Archived</span>}
