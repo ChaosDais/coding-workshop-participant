@@ -85,9 +85,11 @@ frontend/
                                     (managers), ApiTester (#/tester)
   src/timer/TimerContext.jsx        the signed-in user's running timer, shared by the timer bar and project view
   src/components/                   NavBar (Options is the gear icon), Loading (spinner), forms (Project,
-                                    Milestone, User, ResetPassword), Modal, Field, AuditTable, AssigneeList, HoursProgress (completion %), StatusAge,
-                                    StatusBadge, ErrorMessage, TimerBar (ticking clock under the nav bar),
-                                    LogTimeForm, TimeEntries; PresetList, RequestForm, ResponsePanel and
+                                    Milestone, User, ResetPassword), Modal, Field, AuditTable, AssigneeList,
+                                    HoursProgress (completion %), StatusAge, StatusBadge, ErrorMessage, ProjectPreview (a project opened in place in
+                                    the list), RunningTimer (clock and Stop, on the timer's milestone in the
+                                    project view, else in the TimerBar under the nav bar), LogTimeForm,
+                                    TimeEntries; PresetList, RequestForm, ResponsePanel and
                                     TimerPanel belong to the tester
   src/services/api.js               API client: session storage, bearer token, refresh-and-retry on 401
   src/utils/                        formatting, project availability, audit descriptions, user search,

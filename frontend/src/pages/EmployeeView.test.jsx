@@ -86,7 +86,7 @@ describe('employee view', () => {
     render(<App />);
     const nav = await screen.findByRole('navigation', { name: 'Main' });
     expect([...nav.querySelectorAll('a')].map((link) => link.textContent)).toEqual(['Projects']);
-    const row = (await screen.findByRole('link', { name: 'Apollo' })).closest('tr');
+    const row = (await screen.findByRole('link', { name: 'Open Apollo' })).closest('tr');
     expect(within(row).getByText(/Design/)).toBeTruthy();
     expect(within(row).queryByText(/Build/)).toBeNull();
     expect(within(row).getByText('125%')).toBeTruthy();
@@ -105,22 +105,22 @@ describe('employee view', () => {
     expect(within(design).getByText('You')).toBeTruthy();
     expect(within(design).queryByRole('combobox')).toBeNull();
 
-    const build = screen.getByText('Build', { selector: 'strong' }).closest('tr');
-    expect(within(build).queryByRole('button', { name: 'Log Time' })).toBeNull();
-    expect(within(build).queryByRole('button', { name: 'Start Timer' })).toBeNull();
+    // Time controls sit on their own line, only under their own milestone.
+    expect(screen.getByRole('group', { name: 'Time on Design' })).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Time on Build' })).toBeNull();
 
     await user.click(within(design).getByRole('button', { name: 'Send for Review' }));
     expect(calls).toContainEqual({ name: 'status', body: { status: 'AWAITING_REVIEW' } });
 
-    await user.click(within(design).getByRole('button', { name: 'Time Log' }));
+    await user.click(within(screen.getByRole('group', { name: 'Time on Design' })).getByRole('button', { name: 'Time Log' }));
     expect(await screen.findByText('Wireframes')).toBeTruthy();
   });
 
   it('logs hours by hand after checking them', async () => {
     window.location.hash = '#/projects/p1';
     render(<App />);
-    const design = (await screen.findByText('Design', { selector: 'strong' })).closest('tr');
-    await user.click(within(design).getByRole('button', { name: 'Log Time' }));
+    const time = await screen.findByRole('group', { name: 'Time on Design' });
+    await user.click(within(time).getByRole('button', { name: 'Log Time' }));
     const dialog = screen.getByRole('dialog', { name: 'Log Time on Design' });
 
     await user.type(within(dialog).getByLabelText(/^Hours worked/), '30');
@@ -134,22 +134,35 @@ describe('employee view', () => {
     expect(calls).toContainEqual({ name: 'log', body: { hours: 1.5, note: 'Wireframes' } });
   });
 
-  it('runs a timer that ticks every second in the timer bar and logs the time when stopped', async () => {
+  it('runs a timer on the milestone\'s own line that ticks every second, and logs the time when stopped', async () => {
     window.location.hash = '#/projects/p1';
     render(<App />);
-    const design = (await screen.findByText('Design', { selector: 'strong' })).closest('tr');
-    await user.click(within(design).getByRole('button', { name: 'Start Timer' }));
+    const time = await screen.findByRole('group', { name: 'Time on Design' });
+    await user.click(within(time).getByRole('button', { name: 'Start Timer' }));
 
-    const bar = await screen.findByRole('region', { name: 'Timer' });
-    expect(within(bar).getByText('Design · Apollo')).toBeTruthy();
-    const clock = within(bar).getByLabelText('Time on the timer');
+    // On the timer's own project the timer shows on its milestone, not in a bar at the top.
+    const clock = await within(time).findByLabelText('Time on the timer');
+    expect(screen.queryByRole('region', { name: 'Timer' })).toBeNull();
     expect(clock.textContent).toMatch(/^0:00:0[01]$/);
     await act(async () => { vi.advanceTimersByTime(3000); });
     expect(clock.textContent).toMatch(/^0:00:0[34]$/);
-    expect(within(design).getByText('Timer running')).toBeTruthy();
 
-    await user.click(within(bar).getByRole('button', { name: 'Stop Timer' }));
+    await user.click(within(time).getByRole('button', { name: 'Stop Timer' }));
     expect(calls.map((call) => call.name)).toEqual(['start', 'stop']);
-    expect((await screen.findByRole('status')).textContent).toContain('Logged 1 min on Design');
+    expect((await within(time).findByRole('status')).textContent).toContain('Logged 1 min on Design');
+  });
+
+  it('shows a running timer in the bar at the top on other pages', async () => {
+    window.location.hash = '#/projects/p1';
+    render(<App />);
+    const time = await screen.findByRole('group', { name: 'Time on Design' });
+    await user.click(within(time).getByRole('button', { name: 'Start Timer' }));
+    await within(time).findByLabelText('Time on the timer');
+
+    await act(async () => { window.location.hash = '#/projects'; });
+    const bar = await screen.findByRole('region', { name: 'Timer' });
+    expect(within(bar).getByText('Design · Apollo')).toBeTruthy();
+    await user.click(within(bar).getByRole('button', { name: 'Stop Timer' }));
+    expect((await within(bar).findByRole('status')).textContent).toContain('Logged 1 min on Design');
   });
 });

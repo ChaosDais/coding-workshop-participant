@@ -77,12 +77,16 @@ describe('manager view', () => {
   it('lists their projects with completion against expected hours and flags overruns', async () => {
     window.location.hash = '#/projects';
     render(<App />);
-    const row = (await screen.findByRole('link', { name: 'Apollo' })).closest('tr');
+    const row = (await screen.findByRole('link', { name: 'Open Apollo' })).closest('tr');
     expect(within(row).getByText('45 h of 40 h')).toBeTruthy();
     expect(within(row).getByText('40 h')).toBeTruthy();
     expect(within(row).getByText('113%')).toBeTruthy();
     expect(within(row).getByText('Over by 5 h')).toBeTruthy();
-    expect(within(row).getByText('2 days in In progress')).toBeTruthy();
+    // The days in a status show once the project is opened, not in the row.
+    expect(within(row).queryByText(/days in/)).toBeNull();
+    await userEvent.click(within(row).getByRole('button', { name: 'Apollo' }));
+    expect(screen.getByText('2 days in IN PROGRESS')).toBeTruthy();
+    expect(screen.getByText('⚠ Waiting for review for 13 days')).toBeTruthy();
     // A dependency on another manager's project still shows as complete.
     expect(within(row).getByText('Available')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'New Project' })).toBeNull();
@@ -92,10 +96,10 @@ describe('manager view', () => {
   it('shows previously completed projects with their completion dates on request', async () => {
     window.location.hash = '#/projects';
     render(<App />);
-    await screen.findByRole('link', { name: 'Apollo' });
+    await screen.findByRole('link', { name: 'Open Apollo' });
     expect(screen.queryByText('Pilot')).toBeNull();
     await userEvent.click(screen.getByLabelText('Show completed projects'));
-    const pilot = screen.getByRole('link', { name: 'Pilot' }).closest('tr');
+    const pilot = screen.getByRole('link', { name: 'Open Pilot' }).closest('tr');
     expect(within(pilot).getByText(/Jun 30, 2026/)).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Completed' })).toBeTruthy();
   });
@@ -123,8 +127,9 @@ describe('manager view', () => {
     const build = screen.getByText('Build', { selector: 'strong' }).closest('tr');
     expect(within(build).getByText('⚠ Waiting for review for 13 days')).toBeTruthy();
     // Managers log their own time too.
-    expect(within(design).getByRole('button', { name: 'Log Time' })).toBeTruthy();
-    expect(within(design).getByRole('button', { name: 'Start Timer' })).toBeTruthy();
+    const time = screen.getByRole('group', { name: 'Time on Design' });
+    expect(within(time).getByRole('button', { name: 'Log Time' })).toBeTruthy();
+    expect(within(time).getByRole('button', { name: 'Start Timer' })).toBeTruthy();
   });
 
   it('shows their team with each person’s current milestones', async () => {

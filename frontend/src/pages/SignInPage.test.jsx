@@ -59,17 +59,19 @@ describe('signing in', () => {
     expect(screen.queryByRole('navigation', { name: 'Main' })).toBeNull();
   });
 
-  it('opens the projects page with the navigation bar for an admin', async () => {
+  it('opens the projects page with the navigation bar for an admin, whatever page was open before', async () => {
     fakeBackend({
       'POST /auth/login': () => ({ status: 200, body: { accessToken: 'a', refreshToken: 'r', user: admin } }),
       'GET /projects': [], 'GET /projects?archived=true': [], 'GET /users': [admin], 'GET /users?archived=true': [],
     });
+    window.location.hash = '#/audit';
     render(<App />);
     await userEvent.type(screen.getByLabelText('Email'), 'admin@acme.com');
     await userEvent.type(screen.getByLabelText('Password'), 'a-good-password');
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     expect(await screen.findByRole('heading', { name: 'Projects' })).toBeTruthy();
+    expect(window.location.hash).toBe('#/projects');
     const nav = screen.getByRole('navigation', { name: 'Main' });
     expect([...nav.querySelectorAll('a')].map((link) => link.textContent)).toEqual(['Projects', 'Employees', 'Audit log']);
     expect(await screen.findByText(/No projects yet/)).toBeTruthy();

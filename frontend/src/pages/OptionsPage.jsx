@@ -7,7 +7,9 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import { navigate } from '../hooks/useHashRoute.js';
 import { auth, settingsApi, usersApi } from '../services/api.js';
 import { useSettings } from '../settings/SettingsContext.jsx';
-import { THEMES, getTheme, setTheme } from '../settings/theme.js';
+import {
+  FONT_SIZES, THEMES, getFontSize, getTheme, setFontSize, setTheme,
+} from '../settings/theme.js';
 import { roleLabel } from '../utils/format.js';
 import { compact, email as checkEmail, required } from '../utils/validation.js';
 
@@ -106,26 +108,71 @@ function AccountTab() {
   );
 }
 
-/** The colour theme, remembered in this browser. */
+/**
+ * One appearance setting as a row of equal-width choices, each a labelled radio button.
+ * @param {object} props Component props.
+ * @param {string} props.name Radio group name.
+ * @param {string} props.legend What is being chosen, e.g. "Theme".
+ * @param {{value: string, label: string}[]} props.options The choices.
+ * @param {string} props.value The current choice.
+ * @param {Function} props.onChange Receives the chosen value.
+ * @param {Function} [props.sample] Renders a small preview for an option.
+ * @returns {JSX.Element} The choices.
+ */
+function ChoiceGroup({
+  name, legend, options, value, onChange, sample,
+}) {
+  return (
+    <fieldset className="choice-group">
+      <legend>{legend}</legend>
+      <div className="choices">
+        {options.map((option) => (
+          <label key={option.value} className={`choice${value === option.value ? ' selected' : ''}`}>
+            {/* Named by the label text alone, not the preview beside it. */}
+            <input type="radio" name={name} value={option.value} checked={value === option.value} onChange={() => onChange(option.value)} aria-labelledby={`${name}-${option.value}`} />
+            <span className="choice-label" id={`${name}-${option.value}`}>{option.label}</span>
+            {sample && sample(option)}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+ChoiceGroup.propTypes = {
+  name: PropTypes.string.isRequired,
+  legend: PropTypes.string.isRequired,
+  options: PropTypes.arrayOf(PropTypes.shape({ value: PropTypes.string, label: PropTypes.string })).isRequired,
+  value: PropTypes.string.isRequired,
+  onChange: PropTypes.func.isRequired,
+  sample: PropTypes.func,
+};
+
+/** The colour theme and text size, remembered in this browser. */
 function AppearanceTab() {
-  const [theme, setChosen] = useState(getTheme);
-  const choose = (value) => {
-    setChosen(value);
+  const [theme, setChosenTheme] = useState(getTheme);
+  const [fontSize, setChosenFontSize] = useState(getFontSize);
+  const chooseTheme = (value) => {
+    setChosenTheme(value);
     setTheme(value);
+  };
+  const chooseFontSize = (value) => {
+    setChosenFontSize(value);
+    setFontSize(value);
   };
   return (
     <div className="options-panel">
       <section>
-        <h2>Theme</h2>
-        <fieldset className="checkbox-group">
-          <legend className="visually-hidden">Theme</legend>
-          {THEMES.map((option) => (
-            <label key={option.value} className="checkbox">
-              <input type="radio" name="theme" value={option.value} checked={theme === option.value} onChange={() => choose(option.value)} />
-              {option.label}
-            </label>
-          ))}
-        </fieldset>
+        <h2>Appearance</h2>
+        <ChoiceGroup name="theme" legend="Theme" options={THEMES} value={theme} onChange={chooseTheme} />
+        <ChoiceGroup
+          name="font-size"
+          legend="Text size"
+          options={FONT_SIZES}
+          value={fontSize}
+          onChange={chooseFontSize}
+          sample={(option) => <span className="choice-sample" aria-hidden="true" style={{ fontSize: `calc(1.1rem * ${parseFloat(option.scale) / 100})` }}>Aa</span>}
+        />
         <p className="muted small">Remembered in this browser only.</p>
       </section>
     </div>
@@ -156,7 +203,7 @@ function SystemTab() {
   const save = async (event) => {
     event.preventDefault();
     const found = compact({
-      awaitingReviewDays: days(values.awaitingReviewDays, 'Awaiting review'),
+      awaitingReviewDays: days(values.awaitingReviewDays, 'AWAITING REVIEW'),
       anyStatusDays: days(values.anyStatusDays, 'Any status'),
     });
     setErrors(found);
@@ -184,14 +231,14 @@ function SystemTab() {
       <section>
         <h2>Bottleneck Thresholds</h2>
         <p className="muted">
-          Projects and milestones are flagged when they sit in one status too long. Being still To do after the
+          Projects and milestones are flagged when they sit in one status too long. Being still TODO after the
           start date, or past the expected end date, is always flagged. These apply to everyone.
         </p>
         <form onSubmit={save} noValidate>
           {saved && <p className="success" role="status">Thresholds saved.</p>}
           <fieldset disabled={saving}>
             <div className="field-row">
-              <Field id="threshold-review" label="Awaiting review for (days)" required error={errors.awaitingReviewDays} hint="Flags reviews a manager has not signed off.">
+              <Field id="threshold-review" label="AWAITING REVIEW for (days)" required error={errors.awaitingReviewDays} hint="Flags reviews a manager has not signed off.">
                 {(props) => <input id={props.id} type="number" min="1" max="365" step="1" value={values.awaitingReviewDays} onChange={set('awaitingReviewDays')} aria-invalid={props.invalid} aria-describedby={props.describedBy} />}
               </Field>
               <Field id="threshold-any" label="Any one status for (days)" required error={errors.anyStatusDays} hint="Flags anything unfinished that has not moved on.">
@@ -210,7 +257,7 @@ function SystemTab() {
 }
 
 /**
- * Options, in tabs: Account (details, name and email, password, sign out), Appearance (theme) and, for admins,
+ * Options, in tabs: Account (details, name and email, password, sign out), Appearance (theme and text size) and, for admins,
  * System (app-wide settings).
  * @param {object} props Component props.
  * @param {string} [props.tab] The open tab, from the address; defaults to Account.

@@ -54,7 +54,7 @@ function Routes() {
     <SettingsProvider signedIn>
       <TimerProvider>
         <NavBar section={section} user={user} />
-        <TimerBar />
+        <TimerBar projectInView={section === 'projects' ? id : undefined} />
         {pageFor(user, section, id)}
       </TimerProvider>
     </SettingsProvider>

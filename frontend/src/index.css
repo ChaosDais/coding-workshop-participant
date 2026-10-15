@@ -72,6 +72,11 @@
 
 * { box-sizing: border-box; }
 
+/* Text size from Options → Appearance; sizes are in rem, so everything scales with the root. */
+html[data-font-size='small'] { font-size: 87.5%; }
+html[data-font-size='large'] { font-size: 112.5%; }
+html[data-font-size='larger'] { font-size: 125%; }
+
 body {
   margin: 0;
   min-width: 320px;
@@ -121,7 +126,7 @@ input, select, textarea {
   background: var(--surface);
   color: var(--text);
 }
-input[type='checkbox'] { width: auto; }
+input[type='checkbox'], input[type='radio'] { width: auto; }
 [aria-invalid='true'] { border-color: var(--danger); }
 
 fieldset { border: none; margin: 0; padding: 0; min-width: 0; }
@@ -265,7 +270,7 @@ tr.completed .badge, tr.completed a { filter: grayscale(1); }
   background: var(--accent-soft);
   border-bottom: 1px solid var(--border);
 }
-.timer-bar .timer-clock {
+.timer-clock {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 1.3rem;
   font-weight: 700;
@@ -398,3 +403,83 @@ tr.mine td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 
 .options-link { display: inline-flex; align-items: center; justify-content: center; padding: 0.35rem; color: var(--text-muted); }
 .options-link:hover, .options-link[aria-current='page'] { color: var(--accent); }
+
+/* Project list: rows that open in place */
+.expand-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent);
+  text-align: left;
+  cursor: pointer;
+}
+.expand-toggle:hover span { text-decoration: underline; }
+.expand-toggle .chevron { flex: none; transition: transform 0.15s; }
+.expand-toggle[aria-expanded='true'] .chevron { transform: rotate(90deg); }
+.project-name-cell { display: inline-flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+.icon-link {
+  display: inline-flex;
+  padding: 0.2rem;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+.icon-link:hover, .icon-link:focus-visible { color: var(--accent); background: var(--accent-soft); }
+table.clickable tbody tr.expanded, table.clickable tbody tr.expanded:hover { background: var(--accent-soft); }
+table.clickable tbody tr.expanded td { border-bottom-color: transparent; }
+table.clickable tbody tr.preview-row { cursor: default; }
+table.clickable tbody tr.preview-row:hover { background: none; }
+.project-preview { display: grid; gap: 0.6rem; padding: 0.2rem 0 0.6rem 1.4rem; }
+.preview-description { margin: 0; white-space: pre-wrap; }
+.project-preview > p.muted { margin: 0; }
+.preview-heading { margin: 0.3rem 0 0; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); }
+.milestone-previews { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); }
+.milestone-previews > li + li { border-top: 1px solid var(--border); }
+.milestone-preview-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; padding: 0.5rem 0.7rem; }
+.milestone-preview-name { min-width: 8rem; }
+.milestone-preview-hours { margin-left: auto; }
+.milestone-preview-details { padding: 0 0.7rem 0.6rem 2rem; }
+.milestone-preview-details p { margin: 0.2rem 0; white-space: pre-wrap; }
+
+/* Project view: time on its own line under each milestone */
+tr.has-time-row td { border-bottom-color: transparent; }
+tr.time-row td { padding-top: 0; }
+.time-line {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.45rem 0.7rem;
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+}
+.time-line .timer-clock { font-size: 1.1rem; }
+.time-line .time-log-link { margin-left: auto; }
+.time-line .error-banner { margin: 0; flex-basis: 100%; }
+
+/* Options → Appearance: each setting is a row of equal-width choices */
+.choice-group { margin: 0 0 1.4rem; padding: 0; border: 0; min-width: 0; }
+.choice-group legend { padding: 0; margin-bottom: 0.5rem; font-weight: 600; }
+.choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.6rem; }
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 3rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+}
+.choice:hover { border-color: var(--accent); }
+.choice.selected { border-color: var(--accent); background: var(--accent-soft); }
+.choice:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.choice input { flex: none; margin: 0; accent-color: var(--accent); }
+.choice input:focus-visible { outline: none; }
+.choice-label { flex: 1; }
+.choice-sample { font-weight: 600; color: var(--text-muted); line-height: 1; }

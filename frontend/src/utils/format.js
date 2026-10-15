@@ -46,12 +46,12 @@ export function formatTimestamp(timestamp) {
 }
 
 const STATUS_LABELS = {
-  TODO: 'To do', IN_PROGRESS: 'In progress', AWAITING_REVIEW: 'Awaiting review', COMPLETE: 'Complete',
+  TODO: 'TODO', IN_PROGRESS: 'IN PROGRESS', AWAITING_REVIEW: 'AWAITING REVIEW', COMPLETE: 'COMPLETE',
 };
 
 export const STATUSES = Object.keys(STATUS_LABELS);
 
-/** @param {string} status e.g. "IN_PROGRESS". @returns {string} "In progress". */
+/** @param {string} status e.g. "IN_PROGRESS". @returns {string} "IN PROGRESS". */
 export function statusLabel(status) {
   return STATUS_LABELS[status] ?? status;
 }

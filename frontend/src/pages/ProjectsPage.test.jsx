@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import {
-  afterEach, beforeEach, describe, expect, it,
+  afterEach, beforeEach, describe, expect, it, vi,
 } from 'vitest';
 import {
   cleanup, render, screen, within,
@@ -21,12 +21,19 @@ beforeEach(() => {
   setSession({ accessToken: 'a', refreshToken: 'r', user: { id: 'admin', name: 'Admin', role: 'ADMIN' } });
   fakeBackend({
     'GET /projects': [
-      project('p1', 'Design', 'IN_PROGRESS'),
+      project('p1', 'Design', 'IN_PROGRESS', [], {
+        description: 'Visual identity',
+        milestones: [{
+          id: 'ms1', name: 'Wireframes', description: 'Low fidelity first', status: 'IN_PROGRESS', startDate: '2026-01-05',
+          endDate: '2026-02-01', progressTime: 2, assignedEmployees: ['e1'], dependsOn: [],
+        }],
+      }),
       project('p2', 'Build', 'TODO', ['p1'], { startDate: '2026-02-01', endDate: '2026-06-30' }),
       project('p4', 'Launch prep', 'COMPLETE', [], { manager: 'm2', startDate: '2025-06-01' }),
     ],
     'GET /projects?archived=true': [project('p3', 'Pilot', 'IN_PROGRESS')],
-    'GET /users': [manager, { id: 'm2', name: 'Riley Lead', role: 'MANAGER', archived: false }],
+    'GET /users': [manager, { id: 'm2', name: 'Riley Lead', role: 'MANAGER', archived: false },
+      { id: 'e1', name: 'Eli Employee', role: 'EMPLOYEE', archived: false }],
     'GET /users?archived=true': [],
   });
 });
@@ -40,7 +47,7 @@ describe('projects page', () => {
   it('lists current projects with status, manager, progress and availability', async () => {
     renderPage();
     const build = (await screen.findByText('Build')).closest('tr');
-    expect(within(build).getByText('To do')).toBeTruthy();
+    expect(within(build).getByText('TODO')).toBeTruthy();
     expect(within(build).getByText('Morgan Manager')).toBeTruthy();
     expect(within(build).getByText('12 h 30 min')).toBeTruthy();
     expect(within(build).getByText('Blocked by Design')).toBeTruthy();
@@ -94,6 +101,52 @@ describe('projects page', () => {
     await userEvent.click(screen.getByLabelText('Show archived projects'));
     const pilot = screen.getByText('Pilot').closest('tr');
     expect(within(pilot).getByText('Archived')).toBeTruthy();
+  });
+
+  it('opens a project in place to show its description and milestones, and a milestone to show who is on it', async () => {
+    renderPage();
+    const toggle = await screen.findByRole('button', { name: 'Design' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByRole('link', { name: 'Open Design' }).getAttribute('href')).toBe('#/projects/p1');
+
+    await userEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText('Visual identity')).toBeTruthy();
+    const milestone = screen.getByRole('button', { name: 'Wireframes' });
+    expect(screen.queryByText('Low fidelity first')).toBeNull();
+
+    await userEvent.click(milestone);
+    expect(screen.getByText('Low fidelity first')).toBeTruthy();
+    expect(screen.getByText('Eli Employee')).toBeTruthy();
+
+    // Clicking anywhere on the row closes it again.
+    await userEvent.click(screen.getByText('Jan 1, 2026', { selector: 'td' }));
+    expect(screen.queryByText('Visual identity')).toBeNull();
+  });
+
+  it('lets admins archive projects and milestones from the list', async () => {
+    const deleted = [];
+    fakeBackend({
+      'GET /projects': [project('p1', 'Design', 'IN_PROGRESS', [], {
+        milestones: [{
+          id: 'ms1', name: 'Wireframes', status: 'TODO', progressTime: 0, assignedEmployees: [], dependsOn: [],
+        }],
+      })],
+      'GET /projects?archived=true': [],
+      'GET /users': [manager],
+      'GET /users?archived=true': [],
+      'DELETE /projects/p1': () => { deleted.push('p1'); return { status: 204 }; },
+      'DELETE /projects/p1/milestones/ms1': () => { deleted.push('ms1'); return { status: 204 }; },
+    });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderPage();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Design' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Archive milestone Wireframes' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Archive Design' }));
+    expect(deleted).toEqual(['ms1', 'p1']);
+    expect(confirm).toHaveBeenCalledWith('Archive Design? It can be restored later.');
+    confirm.mockRestore();
   });
 
   it('validates a new project before creating it', async () => {

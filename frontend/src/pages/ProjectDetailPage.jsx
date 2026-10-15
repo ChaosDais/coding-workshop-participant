@@ -1,5 +1,5 @@
 import {
-  useCallback, useEffect, useMemo, useState,
+  Fragment, useCallback, useEffect, useMemo, useState,
 } from 'react';
 import PropTypes from 'prop-types';
 import AssigneeList from '../components/AssigneeList.jsx';
@@ -8,6 +8,7 @@ import ErrorMessage from '../components/ErrorMessage.jsx';
 import Loading from '../components/Loading.jsx';
 import HoursProgress from '../components/HoursProgress.jsx';
 import LogTimeForm from '../components/LogTimeForm.jsx';
+import RunningTimer from '../components/RunningTimer.jsx';
 import TimeEntries from '../components/TimeEntries.jsx';
 import MilestoneForm from '../components/MilestoneForm.jsx';
 import Modal from '../components/Modal.jsx';
@@ -270,72 +271,92 @@ function ProjectDetailPage({ projectId }) {
                   const mine = milestone.assignedEmployees.includes(user.id);
                   const canLog = editable && milestone.status !== 'COMPLETE' && (canManage || mine);
                   const timerHere = timer.timer?.milestoneId === milestone.id;
+                  const canSeeTime = canManage || mine;
                   return (
-                    <tr key={milestone.id} className={mine ? 'mine' : undefined} aria-selected={historyFor?.id === milestone.id}>
-                      <td>
-                        <strong>{milestone.name}</strong>
-                        {mine && <span className="badge you-badge">You</span>}
-                        {milestone.description && <p className="muted small">{milestone.description}</p>}
-                      </td>
-                      <td>
-                        {editable && canManage ? (
-                          <select aria-label={`Status of ${milestone.name}`} value={milestone.status} disabled={busy} onChange={(event) => act(() => projectsApi.setMilestoneStatus(projectId, milestone.id, event.target.value))}>
-                            {STATUSES.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
-                          </select>
-                        ) : <StatusBadge status={milestone.status} />}
-                        {canManage && <StatusAge item={milestone} />}
-                        {!canManage && mine && editable && !['AWAITING_REVIEW', 'COMPLETE'].includes(milestone.status) && (
-                          <button type="button" className="link-button" disabled={busy} onClick={() => act(() => projectsApi.setMilestoneStatus(projectId, milestone.id, 'AWAITING_REVIEW'))}>
-                            Send for Review
-                          </button>
-                        )}
-                      </td>
-                      <td className="nowrap">{`${formatDate(milestone.startDate)} – ${formatDate(milestone.endDate)}`}</td>
-                      <td className="numeric">
-                        <HoursProgress progress={milestone.progressTime} expected={milestone.expectedHours} showOverrun={canManage} label={milestone.name} />
-                      </td>
-                      <td>
-                        <AssigneeList
-                          milestone={milestone}
-                          otherMilestones={project.milestones.filter((other) => other.id !== milestone.id)}
-                          team={team}
-                          workingOn={openMilestoneByEmployee(project, milestone.id)}
-                          usersById={lookups.users}
-                          editable={editable && canManage}
-                          busy={busy}
-                          onAssign={(employeeId) => act(() => projectsApi.assign(projectId, milestone.id, employeeId))}
-                          onUnassign={(employeeId) => act(() => projectsApi.unassign(projectId, milestone.id, employeeId))}
-                          onMove={(employeeId, target) => act(() => projectsApi.move(projectId, milestone.id, employeeId, target))}
-                        />
-                      </td>
-                      <td>
-                        {milestone.dependsOn.length === 0 ? <span className="muted">—</span>
-                          : milestone.dependsOn.map((id) => milestonesById.get(id)?.name ?? 'Unknown milestone').join(', ')}
-                        {blocking.length > 0 && <p className="availability blocked small">{`Waiting on ${blocking.join(', ')}`}</p>}
-                      </td>
-                      <td className="row-actions">
-                        {canLog && <button type="button" className="link-button" onClick={() => setLogFor(milestone)}>Log Time</button>}
-                        {canLog && (timerHere ? <span className="muted small">Timer running</span> : (
-                          <button
-                            type="button"
-                            className="link-button"
-                            disabled={busy || Boolean(timer.timer)}
-                            title={timer.timer ? 'Stop your running timer first' : undefined}
-                            onClick={() => act(() => timer.start(project, milestone))}
-                          >
-                            Start Timer
-                          </button>
-                        ))}
-                        {(canManage || mine) && <button type="button" className="link-button" onClick={() => setTimeFor(milestone)}>Time Log</button>}
-                        {isAdmin && <button type="button" className="link-button" onClick={() => setHistoryFor(milestone)}>History</button>}
-                        {editable && canManage && <button type="button" className="link-button" onClick={() => setMilestoneForm({ milestone })}>Edit</button>}
-                        {editable && canManage && (
-                          <button type="button" className="link-button danger" onClick={() => window.confirm(`Archive milestone ${milestone.name}?`) && act(() => projectsApi.archiveMilestone(projectId, milestone.id))}>
-                            Archive
-                          </button>
-                        )}
-                      </td>
-                    </tr>
+                    <Fragment key={milestone.id}>
+                      <tr className={[mine && 'mine', canSeeTime && 'has-time-row'].filter(Boolean).join(' ') || undefined} aria-selected={historyFor?.id === milestone.id}>
+                        <td>
+                          <strong>{milestone.name}</strong>
+                          {mine && <span className="badge you-badge">You</span>}
+                          {milestone.description && <p className="muted small">{milestone.description}</p>}
+                        </td>
+                        <td>
+                          {editable && canManage ? (
+                            <select aria-label={`Status of ${milestone.name}`} value={milestone.status} disabled={busy} onChange={(event) => act(() => projectsApi.setMilestoneStatus(projectId, milestone.id, event.target.value))}>
+                              {STATUSES.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
+                            </select>
+                          ) : <StatusBadge status={milestone.status} />}
+                          {canManage && <StatusAge item={milestone} />}
+                          {!canManage && mine && editable && !['AWAITING_REVIEW', 'COMPLETE'].includes(milestone.status) && (
+                            <button type="button" className="link-button" disabled={busy} onClick={() => act(() => projectsApi.setMilestoneStatus(projectId, milestone.id, 'AWAITING_REVIEW'))}>
+                              Send for Review
+                            </button>
+                          )}
+                        </td>
+                        <td className="nowrap">{`${formatDate(milestone.startDate)} – ${formatDate(milestone.endDate)}`}</td>
+                        <td className="numeric">
+                          <HoursProgress progress={milestone.progressTime} expected={milestone.expectedHours} showOverrun={canManage} label={milestone.name} />
+                        </td>
+                        <td>
+                          <AssigneeList
+                            milestone={milestone}
+                            otherMilestones={project.milestones.filter((other) => other.id !== milestone.id)}
+                            team={team}
+                            workingOn={openMilestoneByEmployee(project, milestone.id)}
+                            usersById={lookups.users}
+                            editable={editable && canManage}
+                            busy={busy}
+                            onAssign={(employeeId) => act(() => projectsApi.assign(projectId, milestone.id, employeeId))}
+                            onUnassign={(employeeId) => act(() => projectsApi.unassign(projectId, milestone.id, employeeId))}
+                            onMove={(employeeId, target) => act(() => projectsApi.move(projectId, milestone.id, employeeId, target))}
+                          />
+                        </td>
+                        <td>
+                          {milestone.dependsOn.length === 0 ? <span className="muted">—</span>
+                            : milestone.dependsOn.map((id) => milestonesById.get(id)?.name ?? 'Unknown milestone').join(', ')}
+                          {blocking.length > 0 && <p className="availability blocked small">{`Waiting on ${blocking.join(', ')}`}</p>}
+                        </td>
+                        <td className="row-actions">
+                          {isAdmin && <button type="button" className="link-button" onClick={() => setHistoryFor(milestone)}>History</button>}
+                          {editable && canManage && <button type="button" className="link-button" onClick={() => setMilestoneForm({ milestone })}>Edit</button>}
+                          {editable && canManage && (
+                            <button type="button" className="link-button danger" onClick={() => window.confirm(`Archive milestone ${milestone.name}?`) && act(() => projectsApi.archiveMilestone(projectId, milestone.id))}>
+                              Archive
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      {canSeeTime && (
+                        <tr className={`time-row${mine ? ' mine' : ''}`}>
+                          <td colSpan={7}>
+                            <div className="time-line" role="group" aria-label={`Time on ${milestone.name}`}>
+                              {timerHere ? <RunningTimer /> : (
+                                <>
+                                  {canLog && <button type="button" onClick={() => setLogFor(milestone)}>Log Time</button>}
+                                  {canLog && (
+                                    <button
+                                      type="button"
+                                      disabled={busy || Boolean(timer.timer)}
+                                      title={timer.timer ? 'Stop your running timer first' : undefined}
+                                      onClick={() => act(() => timer.start(project, milestone))}
+                                    >
+                                      Start Timer
+                                    </button>
+                                  )}
+                                  {canLog && timer.timer && (
+                                    <span className="muted small">
+                                      {`Your timer is running on ${timer.names ? `${timer.names.milestone} · ${timer.names.project}` : 'another milestone'}`}
+                                    </span>
+                                  )}
+                                  {timer.notice?.milestoneId === milestone.id && <span className="success" role="status">{timer.notice.text}</span>}
+                                </>
+                              )}
+                              <button type="button" className="link-button time-log-link" onClick={() => setTimeFor(milestone)}>Time Log</button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
               </tbody>

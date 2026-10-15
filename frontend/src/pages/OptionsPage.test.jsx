@@ -26,6 +26,7 @@ beforeEach(() => {
   saved = undefined;
   localStorage.clear();
   delete document.documentElement.dataset.theme;
+  delete document.documentElement.dataset.fontSize;
   fakeBackend({
     'GET /settings/bottlenecks': { awaitingReviewDays: 3, anyStatusDays: 30 },
     'PUT /settings/bottlenecks': (body) => {
@@ -82,17 +83,31 @@ describe('options', () => {
     expect(document.documentElement.dataset.theme).toBeUndefined();
   });
 
+  it('remembers the chosen text size and applies it to the whole page', async () => {
+    signInAs(manager);
+    window.location.hash = '#/options/appearance';
+    render(<App />);
+    const sizes = screen.getByRole('group', { name: 'Text size' });
+    expect(within(sizes).getByLabelText('Default').checked).toBe(true);
+    await userEvent.click(within(sizes).getByLabelText('Larger'));
+    expect(document.documentElement.dataset.fontSize).toBe('larger');
+    expect(localStorage.getItem('acme.fontSize')).toBe('larger');
+    expect(within(sizes).getByLabelText('Larger').closest('label').className).toContain('selected');
+    await userEvent.click(within(sizes).getByLabelText('Default'));
+    expect(document.documentElement.dataset.fontSize).toBeUndefined();
+  });
+
   it('lets admins, and only admins, change the bottleneck thresholds', async () => {
     signInAs(admin);
     window.location.hash = '#/options/system';
     render(<App />);
-    const review = await screen.findByLabelText(/^Awaiting review for/);
+    const review = await screen.findByLabelText(/^AWAITING REVIEW for/);
     expect(review.value).toBe('3');
 
     await userEvent.clear(review);
     await userEvent.type(review, '0');
     await userEvent.click(screen.getByRole('button', { name: 'Save Thresholds' }));
-    expect(screen.getByText('Awaiting review must be a whole number of days from 1 to 365')).toBeTruthy();
+    expect(screen.getByText('AWAITING REVIEW must be a whole number of days from 1 to 365')).toBeTruthy();
     expect(saved).toBeUndefined();
 
     await userEvent.clear(review);

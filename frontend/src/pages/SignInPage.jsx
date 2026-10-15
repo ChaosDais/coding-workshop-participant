@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Field from '../components/Field.jsx';
 import ErrorMessage from '../components/ErrorMessage.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { navigate } from '../hooks/useHashRoute.js';
 import { compact, email as checkEmail, required } from '../utils/validation.js';
 
 /**
@@ -27,6 +28,8 @@ function SignInPage() {
     setSigningIn(true);
     setSubmitError(undefined);
     try {
+      // Every sign-in starts on the home page (the project list), not whatever page was open last.
+      navigate('/projects');
       await signIn(values.email.trim(), values.password);
     } catch (error) {
       setSubmitError(error);
