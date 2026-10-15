@@ -20,6 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * create, archive or restore projects, hand a project to someone else, or see other managers' work.
  */
 class ManagerTest {
+    private static final String NOT_ON_TEAM =
+            "other-employee@example.com"
+            + " is not on the project manager's team, so cannot be assigned to this project";
+
     private final TestApp app = new TestApp();
     private String adminToken;
     private String managerId;
@@ -145,7 +149,7 @@ class ManagerTest {
         assertEquals("COMPLETE", body(completed).getAsJsonObject().get("status").getAsString());
         assertEquals("2026-03-01", body(completed).getAsJsonObject().get("endDate").getAsString());
 
-        assertEquals("assignedEmployees must be on the project manager's team: " + otherEmployeeId,
+        assertEquals(NOT_ON_TEAM,
                 error(send("PUT", "/projects/" + projectId + "/milestones/" + milestoneId,
                         milestone("COMPLETE", employeeId, otherEmployeeId))));
         assertEquals(400, status(send("POST", "/projects/" + projectId + "/milestones",
@@ -178,7 +182,7 @@ class ManagerTest {
         Map<String, Object> refused = app.send("POST", "/projects/" + projectId + "/milestones",
                 milestone("TODO", otherEmployeeId), adminToken);
         assertEquals(400, status(refused));
-        assertEquals("assignedEmployees must be on the project manager's team: " + otherEmployeeId, error(refused));
+        assertEquals(NOT_ON_TEAM, error(refused));
         assertEquals(400, status(app.send("POST", "/projects", project("Mercury", managerId, "TODO")
                 .replaceFirst("\\{", "{\"milestones\": [" + milestone("TODO", otherEmployeeId) + "], "),
                 adminToken)));
@@ -201,7 +205,7 @@ class ManagerTest {
         assertEquals(200, status(assigned));
         assertEquals(List.of(employeeId), assignees(designId));
         assertEquals(409, status(send("POST", design + "/assignees", "{\"employeeId\": \"" + employeeId + "\"}")));
-        assertEquals("assignedEmployees must be on the project manager's team: " + otherEmployeeId,
+        assertEquals(NOT_ON_TEAM,
                 error(send("POST", design + "/assignees", "{\"employeeId\": \"" + otherEmployeeId + "\"}")));
 
         Map<String, Object> moved = send("POST", design + "/assignees/" + employeeId + "/move",

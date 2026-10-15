@@ -77,7 +77,7 @@ public class UserService {
     }
 
     private User require(String id) {
-        return users.findById(id).orElseThrow(() -> new NotFoundException("User " + id + " not found"));
+        return users.findById(id).orElseThrow(() -> new NotFoundException("This user was not found"));
     }
 
     public User create(User user, String password, User actor) {
@@ -118,7 +118,9 @@ public class UserService {
         users.update(moved);
         Map<String, Object> details = new HashMap<>();
         details.put("fromManagerId", employee.managerId());
+        details.put("fromManagerName", managerName(employee.managerId()));
         details.put("toManagerId", managerId);
+        details.put("toManagerName", managerName(managerId));
         audit("employee_moved", moved, actor, details);
         return moved;
     }
@@ -139,7 +141,7 @@ public class UserService {
         }
         requireRoleCanChange(user);
         if (!users.archive(id)) {
-            throw new NotFoundException("User " + id + " not found");
+            throw new NotFoundException("This user was not found");
         }
         tokens.revokeAllRefreshTokens(id);
         audit("user_archived", user, actor, Map.of());
@@ -147,7 +149,7 @@ public class UserService {
 
     public User restore(String id, User actor) {
         if (!users.restore(id)) {
-            throw new NotFoundException("Archived user " + id + " not found");
+            throw new NotFoundException("This archived user was not found");
         }
         User user = require(id);
         audit("user_restored", user, actor, Map.of());
@@ -157,7 +159,7 @@ public class UserService {
     private User requireActive(String id) {
         User user = require(id);
         if (user.archived()) {
-            throw new NotFoundException("User " + id + " not found");
+            throw new NotFoundException("This user was not found");
         }
         return user;
     }
@@ -185,8 +187,12 @@ public class UserService {
                 .filter(manager -> !manager.archived() && manager.role() == Role.MANAGER)
                 .isPresent();
         if (!activeManager) {
-            throw new IllegalArgumentException("managerId must be the id of an active manager: " + managerId);
+            throw new IllegalArgumentException("The chosen manager is not an active manager");
         }
+    }
+
+    private String managerName(String managerId) {
+        return managerId == null ? null : users.findById(managerId).map(User::name).orElse(null);
     }
 
     private void audit(String action, User subject, User actor, Map<String, Object> extra) {
@@ -195,6 +201,6 @@ public class UserService {
         details.put("name", subject.name());
         details.put("email", subject.email());
         details.putAll(extra);
-        auditService.recordAction(action, actor.email(), details);
+        auditService.recordAction(action, actor, details);
     }
 }

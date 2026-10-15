@@ -1,3 +1,5 @@
+import { formatHours } from './format.js';
+
 /** Audit actions grouped the way the audit log's type filter offers them. */
 export const ACTION_GROUPS = {
   Accounts: ['default_admin_created', 'user_created', 'user_updated', 'user_archived', 'user_restored',
@@ -14,9 +16,23 @@ export function actionLabel(action) {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** A user's name from the entry, else from the lookup, else a short id. */
+/** A user's name from the entry, else from the lookup; never their id. */
 function userName(id, storedName, users) {
-  return storedName ?? users?.get(id)?.name ?? `user ${id.slice(0, 8)}`;
+  return storedName ?? users?.get(id)?.name ?? 'an unknown user';
+}
+
+/**
+ * Who made the change, by name: stored with the entry, else looked up by the email the entry records.
+ * @param {{actor: string, details?: object}} entry Audit entry.
+ * @param {{users?: Map<string, {name: string, email: string}>}} names Lookups.
+ * @returns {string} e.g. "Ada Lovelace", or the email or "system" when no name is known.
+ */
+export function actorName(entry, names = {}) {
+  if (entry.details?.actorName) {
+    return entry.details.actorName;
+  }
+  const found = [...(names.users?.values() ?? [])].find((user) => user.email === entry.actor);
+  return found?.name ?? entry.actor;
 }
 
 /**
@@ -34,7 +50,7 @@ export function describeDetails(entry, names = {}) {
   }
   if (details.milestoneId) {
     const name = details.milestoneName ?? names.milestones?.get(details.milestoneId)?.name;
-    parts.push(`milestone ${name ?? details.milestoneId.slice(0, 8)}`);
+    parts.push(`milestone ${name ?? '(unknown)'}`);
   }
   if (details.userId) {
     const name = userName(details.userId, details.name, names.users);
@@ -43,18 +59,18 @@ export function describeDetails(entry, names = {}) {
     parts.push(details.email);
   }
   if ('toManagerId' in details) {
-    const manager = (id) => (id ? userName(id, undefined, names.users) : 'no manager');
-    parts.push(`${manager(details.fromManagerId)} → ${manager(details.toManagerId)}`);
+    const manager = (id, storedName) => (id ? userName(id, storedName, names.users) : 'no manager');
+    parts.push(`${manager(details.fromManagerId, details.fromManagerName)} → ${manager(details.toManagerId, details.toManagerName)}`);
   }
   if (details.employeeId) {
     parts.push(details.employeeName ?? names.users?.get(details.employeeId)?.name
-      ?? `employee ${details.employeeId.slice(0, 8)}`);
+      ?? 'an unknown employee');
   }
   if (details.fromMilestoneName) {
     parts.push(`from ${details.fromMilestoneName}`);
   }
   if (details.hours) {
-    parts.push(details.previousHours ? `${details.previousHours} h → ${details.hours} h` : `${details.hours} h`);
+    parts.push(details.previousHours ? `${formatHours(details.previousHours)} → ${formatHours(details.hours)}` : formatHours(details.hours));
   }
   if (details.from && details.to) {
     parts.push(`${details.from} → ${details.to}`);

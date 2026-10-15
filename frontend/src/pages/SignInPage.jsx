@@ -37,7 +37,7 @@ function SignInPage() {
   return (
     <main className="auth-page">
       <form className="auth-card" onSubmit={submit} noValidate>
-        <h1>ACME Projects</h1>
+        <h1>Project Manager</h1>
         <p className="muted">Sign in with the account your administrator gave you.</p>
         <fieldset disabled={signingIn}>
           <Field id="sign-in-email" label="Email" error={errors.email}>
@@ -49,7 +49,7 @@ function SignInPage() {
         </fieldset>
         <ErrorMessage error={submitError} />
         <button type="submit" className="primary wide" disabled={signingIn}>
-          {signingIn ? 'Signing in… the first sign-in can take up to 30 seconds' : 'Sign in'}
+          {signingIn ? <><span className="spinner small" aria-hidden="true" />Signing in… the first sign-in can take up to 30 seconds</> : 'Sign in'}
         </button>
       </form>
     </main>

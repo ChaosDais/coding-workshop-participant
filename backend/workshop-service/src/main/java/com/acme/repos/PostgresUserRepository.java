@@ -181,8 +181,7 @@ public class PostgresUserRepository implements UserRepository {
     /** Turns a unique violation into a 409; the transaction is rolled back either way. */
     private static RuntimeException duplicateEmailOr(SQLException e, User user) throws SQLException {
         if (UNIQUE_VIOLATION.equals(e.getSQLState())) {
-            throw new ConflictException("A user with email " + user.email() + " or id " + user.id()
-                    + " already exists");
+            throw new ConflictException("A user with email " + user.email() + " already exists");
         }
         throw e;
     }

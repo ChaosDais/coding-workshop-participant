@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import PropTypes from 'prop-types';
 import ErrorMessage from './ErrorMessage.jsx';
+import Loading from './Loading.jsx';
 import { useLoader } from '../hooks/useLoader.js';
 import { timeApi } from '../services/api.js';
 import { formatHours, formatMoney, formatTimestamp } from '../utils/format.js';
@@ -22,7 +23,7 @@ function TimeEntries({ projectId, milestoneId, usersById }) {
     return <ErrorMessage error={error} onRetry={reload} />;
   }
   if (loading && !data) {
-    return <p className="muted" role="status">Loading time…</p>;
+    return <Loading>Loading time…</Loading>;
   }
   if (data.length === 0) {
     return <p className="muted">No time logged yet.</p>;

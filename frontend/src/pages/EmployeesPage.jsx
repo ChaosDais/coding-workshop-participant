@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import ErrorMessage from '../components/ErrorMessage.jsx';
+import Loading from '../components/Loading.jsx';
 import Modal from '../components/Modal.jsx';
 import ResetPasswordForm from '../components/ResetPasswordForm.jsx';
 import UserForm from '../components/UserForm.jsx';
@@ -89,7 +90,7 @@ function EmployeesPage() {
       <ErrorMessage error={error} onRetry={reload} />
       <ErrorMessage error={actionError} />
       {notice && <p className="success" role="status">{notice}</p>}
-      {loading && !data && <p className="muted" role="status">Loading users…</p>}
+      {loading && !data && <Loading>Loading users…</Loading>}
 
       {data && (rows.length === 0 ? <p className="muted">No users match these filters.</p> : (
         <div className="table-wrap">

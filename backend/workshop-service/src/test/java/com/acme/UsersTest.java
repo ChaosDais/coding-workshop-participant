@@ -93,7 +93,7 @@ class UsersTest {
         assertEquals("only employees can have a manager", error(send("POST", "/users",
                 body.formatted("x@example.com", "MANAGER", PASSWORD, ", \"managerId\": \"" + managerId + "\""))));
         assertTrue(error(send("POST", "/users", body.formatted("x@example.com", "EMPLOYEE", PASSWORD,
-                ", \"managerId\": \"" + adminId + "\""))).startsWith("managerId must be the id of an active manager"));
+                ", \"managerId\": \"" + adminId + "\""))).equals("The chosen manager is not an active manager"));
     }
 
     @Test

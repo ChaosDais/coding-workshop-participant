@@ -16,7 +16,7 @@ export function availability(project, projectsById) {
     .map((dependency) => [dependency.id, dependency]));
   const blockedBy = (project.dependsOn ?? [])
     .map((id) => described.get(id) ?? projectsById.get(id)
-      ?? { name: `Unknown project (${id.slice(0, 8)})`, status: 'UNKNOWN' })
+      ?? { name: 'an unknown project', status: 'UNKNOWN' })
     .filter((dependency) => dependency.status !== 'COMPLETE')
     .map((dependency) => dependency.name);
   return blockedBy.length === 0

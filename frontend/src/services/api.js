@@ -76,6 +76,10 @@ async function send(method, path, body, accessToken) {
   }
   const text = await response.text();
   const data = text ? parseJson(text) : undefined;
+  if (response.ok && text && data === undefined) {
+    // On AWS, CloudFront answers an API 404 with the app's index page and status 200; treat it as the 404 it was.
+    throw new ApiError(404, 'Not found: it may have been archived or removed.');
+  }
   if (!response.ok) {
     throw new ApiError(response.status, data?.error ?? (response.statusText || 'Request failed'));
   }

@@ -2,6 +2,7 @@ package com.acme.services;
 
 import com.acme.models.AuditEntry;
 import com.acme.models.AuditQuery;
+import com.acme.models.User;
 import com.acme.repos.AuditRepository;
 
 import java.time.Clock;
@@ -18,6 +19,16 @@ public class AuditService {
     public AuditService(AuditRepository repository, Clock clock) {
         this.repository = repository;
         this.clock = clock;
+    }
+
+    /** Records a change made by a signed-in user, keeping their name so the log reads by name, not by id. */
+    public AuditEntry recordAction(String action, User actor, Map<String, Object> details) {
+        Map<String, Object> named = new LinkedHashMap<>();
+        if (details != null) {
+            named.putAll(details);
+        }
+        named.put("actorName", actor.name());
+        return recordAction(action, actor.email(), named);
     }
 
     public AuditEntry recordAction(String action, String actor, Map<String, Object> details) {

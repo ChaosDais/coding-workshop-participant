@@ -8,7 +8,7 @@ import { navigate } from '../hooks/useHashRoute.js';
 import { auth, settingsApi, usersApi } from '../services/api.js';
 import { useSettings } from '../settings/SettingsContext.jsx';
 import { THEMES, getTheme, setTheme } from '../settings/theme.js';
-import { formatMoney, roleLabel } from '../utils/format.js';
+import { roleLabel } from '../utils/format.js';
 import { compact, email as checkEmail, required } from '../utils/validation.js';
 
 /** The tabs each role sees; System is for admins. */
@@ -66,10 +66,9 @@ function AccountTab() {
           <div><dt>Role</dt><dd>{roleLabel(user.role)}</dd></div>
           <div><dt>Job</dt><dd>{user.jobType ?? '—'}</dd></div>
           {user.role === 'EMPLOYEE' && <div><dt>Manager</dt><dd>{managerName ?? (user.managerId ? '…' : 'None yet')}</dd></div>}
-          <div><dt>Salary</dt><dd>{formatMoney(user.salary)}</dd></div>
           <div><dt>ID</dt><dd><code>{user.id}</code></dd></div>
         </dl>
-        <p className="muted small">Only an admin can change your role, job, manager or salary.</p>
+        <p className="muted small">Only an admin can change your role, job or manager.</p>
       </section>
 
       <section>

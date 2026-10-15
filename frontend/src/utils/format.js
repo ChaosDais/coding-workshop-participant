@@ -8,10 +8,20 @@ export function formatMoney(value) {
   return money.format(Number(value));
 }
 
-/** @param {number|undefined} hours Hours. @returns {string} "12.5 h". */
+/**
+ * Hours as hours and minutes, to the nearest minute.
+ * @param {number|string|undefined} hours Hours, e.g. 12.5.
+ * @returns {string} "12 h 30 min", "45 h", "20 min" or "0 min".
+ */
 export function formatHours(hours) {
-  const value = Number(hours ?? 0);
-  return `${Number.isInteger(value) ? value : value.toFixed(2).replace(/0$/, '')} h`;
+  const minutes = Math.round(Math.abs(Number(hours ?? 0)) * 60);
+  const sign = Number(hours) < 0 && minutes > 0 ? '−' : '';
+  const whole = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (whole === 0) {
+    return `${sign}${rest} min`;
+  }
+  return `${sign}${whole} h${rest ? ` ${rest} min` : ''}`;
 }
 
 /** @param {string|undefined} date "2026-01-31". @returns {string} "Jan 31, 2026", or "—". */

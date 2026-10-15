@@ -79,6 +79,7 @@ describe('manager view', () => {
     render(<App />);
     const row = (await screen.findByRole('link', { name: 'Apollo' })).closest('tr');
     expect(within(row).getByText('45 h of 40 h')).toBeTruthy();
+    expect(within(row).getByText('40 h')).toBeTruthy();
     expect(within(row).getByText('113%')).toBeTruthy();
     expect(within(row).getByText('Over by 5 h')).toBeTruthy();
     expect(within(row).getByText('2 days in In progress')).toBeTruthy();

@@ -58,7 +58,9 @@ describe('options', () => {
     window.location.hash = '#/options/account';
     render(<App />);
     expect(screen.getByText('Operations')).toBeTruthy();
-    expect(screen.getByText('$90,000.00')).toBeTruthy();
+    // Pay is not shown in Options.
+    expect(screen.queryByText('$90,000.00')).toBeNull();
+    expect(screen.queryByText('Salary')).toBeNull();
     expect(screen.getByRole('button', { name: 'Sign Out' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Change Password' })).toBeTruthy();
 

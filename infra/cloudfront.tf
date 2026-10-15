@@ -39,9 +39,10 @@ resource "aws_cloudfront_distribution" "this" {
     }
   }
 
+  # Applies to the API too, so error pages are not cached: a cached "not found" would hide data created since.
   custom_error_response {
     error_code            = 404
-    error_caching_min_ttl = 300
+    error_caching_min_ttl = 0
     response_code         = 200
     response_page_path    = "/index.html"
   }

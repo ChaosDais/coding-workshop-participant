@@ -61,7 +61,7 @@ public class AuthService {
         }
         User admin = new User(null, defaultAdmin.email(), "Administrator", Role.ADMIN, null, null, null, false, true);
         if (users.insertIfEmpty(admin, passwords.hash(defaultAdmin.password()))) {
-            auditService.recordAction("default_admin_created", admin.email(), Map.of("userId", admin.id(),
+            auditService.recordAction("default_admin_created", admin, Map.of("userId", admin.id(),
                     "name", admin.name(), "email", admin.email()));
         }
     }
@@ -102,7 +102,7 @@ public class AuthService {
         User updated = new User(user.id(), email, name, user.role(), user.managerId(), user.jobType(), user.salary(),
                 false, user.passwordChangeRequired());
         users.update(updated);
-        auditService.recordAction("profile_updated", updated.email(), Map.of("userId", user.id(),
+        auditService.recordAction("profile_updated", updated, Map.of("userId", user.id(),
                 "name", updated.name(), "email", updated.email(), "previousEmail", user.email()));
         return updated;
     }
@@ -115,7 +115,7 @@ public class AuthService {
         }
         users.setPasswordHash(user.id(), passwords.hash(newPassword));
         tokens.revokeAllRefreshTokens(user.id());
-        auditService.recordAction("password_changed", user.email(), Map.of("userId", user.id(), "name", user.name(),
+        auditService.recordAction("password_changed", user, Map.of("userId", user.id(), "name", user.name(),
                 "email", user.email()));
     }
 

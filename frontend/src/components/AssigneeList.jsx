@@ -20,7 +20,7 @@ import PropTypes from 'prop-types';
 function AssigneeList({
   milestone, otherMilestones, team, workingOn, usersById, editable, busy, onAssign, onUnassign, onMove,
 }) {
-  const name = (id) => usersById.get(id)?.name ?? `Former team member (${id.slice(0, 8)})`;
+  const name = (id) => usersById.get(id)?.name ?? 'Former team member';
   const unassigned = team.filter((employee) => !milestone.assignedEmployees.includes(employee.id));
 
   if (!editable) {

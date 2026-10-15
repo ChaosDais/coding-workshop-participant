@@ -150,6 +150,6 @@ describe('employee view', () => {
 
     await user.click(within(bar).getByRole('button', { name: 'Stop Timer' }));
     expect(calls.map((call) => call.name)).toEqual(['start', 'stop']);
-    expect((await screen.findByRole('status')).textContent).toContain('Logged 0.01 h on Design');
+    expect((await screen.findByRole('status')).textContent).toContain('Logged 1 min on Design');
   });
 });

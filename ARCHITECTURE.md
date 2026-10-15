@@ -1,6 +1,6 @@
 # Architecture
 
-ACME's project tracking system: admins create projects for managers, managers plan milestones and assign their
+Project Manager, a project tracking system: admins create projects for managers, managers plan milestones and assign their
 team, and employees log the time they spend. The system tracks progress, budget against cost, and who changed
 what.
 
@@ -44,7 +44,7 @@ flowchart LR
 |---|---|---|
 | Frontend | Vite dev server, port 3000 | Built into S3, served by CloudFront |
 | API entry | Dev proxy `bin/proxy-server.js`, port 3001, which strips `/api/workshop-service` and forwards to the LocalStack function URL | CloudFront forwards `/api/workshop-service*` unchanged to the function URL |
-| Lambda | LocalStack; runs the jar in `backend/workshop-service/target/lib` and hot-reloads it | AWS Lambda, Java 25, 128 MB |
+| Lambda | LocalStack; runs the jar in `backend/workshop-service/target/lib` and hot-reloads it | AWS Lambda, Java 25, 512 MB |
 | Database | PostgreSQL on the host | Aurora PostgreSQL (`infra/rds.tf`), SSL required |
 | Deploy | `./bin/deploy-backend.sh local` | `./bin/deploy-backend.sh aws`, then `./bin/deploy-frontend.sh aws` |
 
@@ -84,8 +84,8 @@ frontend/
                                     employees get a reduced view), Employees and AuditLog (admins), Team
                                     (managers), ApiTester (#/tester)
   src/timer/TimerContext.jsx        the signed-in user's running timer, shared by the timer bar and project view
-  src/components/                   NavBar, forms (Project, Milestone, User, ResetPassword), Modal, Field,
-                                    AuditTable, AssigneeList, HoursProgress (completion %), StatusAge,
+  src/components/                   NavBar (Options is the gear icon), Loading (spinner), forms (Project,
+                                    Milestone, User, ResetPassword), Modal, Field, AuditTable, AssigneeList, HoursProgress (completion %), StatusAge,
                                     StatusBadge, ErrorMessage, TimerBar (ticking clock under the nav bar),
                                     LogTimeForm, TimeEntries; PresetList, RequestForm, ResponsePanel and
                                     TimerPanel belong to the tester
@@ -342,12 +342,21 @@ Every error response has the shape `{"error": "<message>"}`.
 | 409 | Conflicts with existing state: duplicate id or email, blocked dependency, frozen dates, running timer | `ConflictException` |
 | 500 | Database failure (stack trace goes to CloudWatch) | `StorageException` |
 
-On AWS, CloudFront currently rewrites every 404 into `index.html` with status 200 (`infra/cloudfront.tf`), so API
-404s are not visible as such there.
+On AWS, CloudFront rewrites every 404 into `index.html` with status 200 (`infra/cloudfront.tf`), API responses
+included, so API 404s are not visible as such there. To live with this:
+
+- endpoints that answer "nothing here" as a normal case avoid 404: `GET /timer` answers `204` when no timer runs,
+  and `POST /timer/stop` answers `409` when there is nothing to stop;
+- the frontend treats an HTML reply to an API call as the 404 it was (`services/api.js`);
+- error pages are not cached (`error_caching_min_ttl = 0`), so a "not found" never hides data created since.
 
 ## Audit log
 
 Every change is recorded in `audit_entries` with the acting user's email and details such as the ids involved.
+Details also store the **names** of the people, projects and milestones involved, as they were at the time
+(`actorName`, `projectName`, `milestoneName`, `employeeName`, `fromManagerName`, `toManagerName`, …), so the log
+reads by name even after renames or archiving. The frontend never shows ids in the log or in messages; error
+messages name what they are about, and a record that cannot be found is described without its id.
 Reads and rejected requests are not recorded. Admins read them at `GET /audit`, newest first, with optional
 filters: `projectId`, `milestoneId`, `action` (one or more, comma-separated), `from` and `to` (`YYYY-MM-DD`,
 inclusive, UTC), `q` (text in the action, actor or details, ignoring case) and `limit` (default 100, at most 500).
@@ -427,7 +436,7 @@ deployed.
 - **Signing secret**: the token signing secret is stored in the database, so read access to the database would
   allow forging tokens.
 - **Not atomic**: a change and its audit entry are written in separate transactions.
-- **CloudFront 404s**: on AWS, CloudFront hides API 404s (see [Errors](#errors)).
+- **CloudFront 404s**: on AWS, CloudFront hides API 404s; the API and frontend work around it (see [Errors](#errors)).
 - **Memory**: the Lambda runs with 512 MB; BCrypt makes sign-in CPU-heavy, so raise `memory_size` in
   `infra/lambda.tf` if sign-in is still slow.
 - **Not yet built** (from the project notes):

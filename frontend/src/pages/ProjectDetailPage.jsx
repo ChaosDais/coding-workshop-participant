@@ -5,6 +5,7 @@ import PropTypes from 'prop-types';
 import AssigneeList from '../components/AssigneeList.jsx';
 import AuditTable from '../components/AuditTable.jsx';
 import ErrorMessage from '../components/ErrorMessage.jsx';
+import Loading from '../components/Loading.jsx';
 import HoursProgress from '../components/HoursProgress.jsx';
 import LogTimeForm from '../components/LogTimeForm.jsx';
 import TimeEntries from '../components/TimeEntries.jsx';
@@ -20,7 +21,7 @@ import { useTimer } from '../timer/TimerContext.jsx';
 import { loadProjectsAndPeople } from '../services/projectData.js';
 import { availability, blockingMilestones, openMilestoneByEmployee } from '../utils/projects.js';
 import {
-  STATUSES, formatDate, formatMoney, formatTimestamp, statusLabel,
+  STATUSES, formatDate, formatHours, formatMoney, formatTimestamp, statusLabel,
 } from '../utils/format.js';
 import { byId } from '../utils/users.js';
 
@@ -123,7 +124,7 @@ function ProjectDetailPage({ projectId }) {
     return <main className="page"><ErrorMessage error={error} onRetry={reload} /></main>;
   }
   if (loading && !data) {
-    return <main className="page"><p className="muted" role="status">Loading project…</p></main>;
+    return <main className="page"><Loading>Loading project…</Loading></main>;
   }
   if (!project) {
     return (
@@ -138,7 +139,7 @@ function ProjectDetailPage({ projectId }) {
   const projectAvailability = availability(project, lookups.projects);
   const milestonesById = new Map([...project.milestones, ...(archivedMilestones.data ?? [])].map((m) => [m.id, m]));
   const team = data.users.filter((person) => person.role === 'EMPLOYEE' && !person.archived && person.managerId === project.manager);
-  const names = (ids) => ids.map((id) => lookups.users.get(id)?.name ?? `Former team member (${id.slice(0, 8)})`).join(', ');
+  const names = (ids) => ids.map((id) => lookups.users.get(id)?.name ?? 'Former team member').join(', ');
   const dependencies = project.dependencies ?? project.dependsOn.map((id) => ({ id, ...lookups.projects.get(id) }));
 
   const logTime = async (hours, note) => {
@@ -195,7 +196,7 @@ function ProjectDetailPage({ projectId }) {
       <ErrorMessage error={actionError} />
 
       <dl className="summary">
-        {isAdmin && <div><dt>Manager</dt><dd>{lookups.users.get(project.manager)?.name ?? project.manager}</dd></div>}
+        {isAdmin && <div><dt>Manager</dt><dd>{lookups.users.get(project.manager)?.name ?? 'Unknown manager'}</dd></div>}
         <div><dt>Dates</dt><dd>{`${formatDate(project.startDate)} – ${formatDate(project.endDate)}`}</dd></div>
         {canManage && project.status !== 'COMPLETE' && project.statusChangedAt && (
           <div><dt>Time in status</dt><dd><StatusAge item={project} /></dd></div>
@@ -224,7 +225,7 @@ function ProjectDetailPage({ projectId }) {
           <ul className="plain-list">
             {dependencies.map((dependency) => (
               <li key={dependency.id}>
-                {!dependency.name && `Unknown project (${dependency.id.slice(0, 8)})`}
+                {!dependency.name && 'Unknown project'}
                 {dependency.name && (lookups.projects.has(dependency.id)
                   ? <a href={`#/projects/${dependency.id}`}>{dependency.name}</a>
                   : dependency.name)}
@@ -309,7 +310,7 @@ function ProjectDetailPage({ projectId }) {
                       </td>
                       <td>
                         {milestone.dependsOn.length === 0 ? <span className="muted">—</span>
-                          : milestone.dependsOn.map((id) => milestonesById.get(id)?.name ?? id.slice(0, 8)).join(', ')}
+                          : milestone.dependsOn.map((id) => milestonesById.get(id)?.name ?? 'Unknown milestone').join(', ')}
                         {blocking.length > 0 && <p className="availability blocked small">{`Waiting on ${blocking.join(', ')}`}</p>}
                       </td>
                       <td className="row-actions">
@@ -346,7 +347,7 @@ function ProjectDetailPage({ projectId }) {
           <div className="archived-section">
             <h3>Archived milestones</h3>
             <ErrorMessage error={archivedMilestones.error} onRetry={archivedMilestones.reload} />
-            {archivedMilestones.loading && <p className="muted" role="status">Loading…</p>}
+            {archivedMilestones.loading && <Loading>Loading archived milestones…</Loading>}
             {archivedMilestones.data?.length === 0 && <p className="muted">No archived milestones.</p>}
             {archivedMilestones.data?.length > 0 && (
               <ul className="plain-list">
@@ -355,7 +356,7 @@ function ProjectDetailPage({ projectId }) {
                     <strong>{milestone.name}</strong>
                     {' '}
                     <StatusBadge status={milestone.status} />
-                    <span className="muted">{` · ${milestone.progressTime} h · ${names(milestone.assignedEmployees) || 'nobody assigned'}`}</span>
+                    <span className="muted">{` · ${formatHours(milestone.progressTime)} · ${names(milestone.assignedEmployees) || 'nobody assigned'}`}</span>
                     {' '}
                     {isAdmin && <button type="button" className="link-button" onClick={() => setHistoryFor(milestone)}>History</button>}
                   </li>
@@ -373,7 +374,7 @@ function ProjectDetailPage({ projectId }) {
             {historyFor && <button type="button" onClick={() => setHistoryFor(undefined)}>Show whole project</button>}
           </div>
           <ErrorMessage error={history.error} onRetry={history.reload} />
-          {history.loading && !history.data && <p className="muted" role="status">Loading history…</p>}
+          {history.loading && !history.data && <Loading>Loading history…</Loading>}
           {history.data && <AuditTable entries={history.data} names={{ users: lookups.users, milestones: milestonesById }} />}
         </section>
       )}

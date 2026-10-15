@@ -229,7 +229,8 @@ class EmployeeTest {
                 .get("spent").getAsString());
 
         assertEquals("No timer is running", error(send("POST", "/timer/stop", null)));
-        assertEquals(404, status(send("GET", "/timer", null)));
+        // 204, not 404, so CloudFront does not swap the answer for the frontend's index page.
+        assertEquals(204, status(send("GET", "/timer", null)));
         assertEquals(201, status(send("POST", milestonePath(milestoneId) + "/timer", "{\"note\": \"Round two\"}")));
     }
 
@@ -256,7 +257,7 @@ class EmployeeTest {
         adminToken = app.signIn(TestApp.ADMIN_EMAIL, PASSWORD).get("accessToken").getAsString();
 
         // Looking at the timer closes it at the cap; the time is logged and nothing is running any more.
-        assertEquals("No timer is running", error(send("GET", "/timer", null)));
+        assertEquals(204, status(send("GET", "/timer", null)));
         assertEquals(8.0, milestoneAsAdmin(milestoneId).get("progressTime").getAsDouble());
         assertEquals(201, status(send("POST", milestonePath(milestoneId) + "/timer", null)));
 

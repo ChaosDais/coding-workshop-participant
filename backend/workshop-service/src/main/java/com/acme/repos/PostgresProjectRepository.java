@@ -251,8 +251,8 @@ public class PostgresProjectRepository implements ProjectRepository {
             for (int index = 0; index < counts.length; index++) {
                 if (counts[index] == 0) {
                     // Rolls back the whole transaction, so nothing of this change is stored.
-                    throw new ConflictException("Milestone id " + project.milestones().get(index).id()
-                            + " belongs to an archived milestone");
+                    throw new ConflictException("Milestone '" + project.milestones().get(index).name()
+                            + "' has been archived; reload the project and try again");
                 }
             }
         }

@@ -103,7 +103,7 @@ class AdminViewTest {
     void auditEntriesNameTheMilestonesAndPeopleTheyAreAbout() {
         assertEquals(204, status(send("DELETE", "/projects/" + projectId + "/milestones/" + designId, null)));
         assertEquals(Map.of("projectId", projectId, "projectName", "Apollo", "milestoneId", designId,
-                "milestoneName", "Design"), details("?action=milestone_archived"));
+                "milestoneName", "Design", "actorName", "Administrator"), details("?action=milestone_archived"));
         assertEquals("Build", details("?action=milestone_added&milestoneId=" + buildId).get("milestoneName"));
 
         String employeeId = app.createUser(token, "eli@example.com", "EMPLOYEE", null);
@@ -137,6 +137,26 @@ class AdminViewTest {
     }
 
     /** The details of the newest audit entry matching the query. */
+    @Test
+    void timeEntriesAndTeamMovesAreLoggedByName() {
+        assertEquals(201, status(send("POST", "/projects/" + projectId + "/milestones/" + designId + "/time",
+                "{\"hours\": 1}")));
+        Map<String, Object> logged = details("?action=time_logged");
+        assertEquals("Apollo", logged.get("projectName"));
+        assertEquals("Design", logged.get("milestoneName"));
+        assertEquals("Administrator", logged.get("employeeName"));
+        assertEquals("Administrator", logged.get("actorName"));
+
+        String fromId = app.createUser(token, "from@example.com", "MANAGER", null);
+        String toId = app.createUser(token, "to@example.com", "MANAGER", null);
+        String employeeId = app.createUser(token, "moved@example.com", "EMPLOYEE", fromId);
+        assertEquals(200, status(send("PUT", "/users/" + employeeId + "/manager",
+                "{\"managerId\": \"%s\"}".formatted(toId))));
+        Map<String, Object> moved = details("?action=employee_moved");
+        assertEquals("from@example.com", moved.get("fromManagerName"));
+        assertEquals("to@example.com", moved.get("toManagerName"));
+    }
+
     private Map<String, Object> details(String query) {
         JsonElement entry = body(send("GET", "/audit" + query, null)).getAsJsonArray().get(0);
         Map<String, Object> details = new java.util.HashMap<>();

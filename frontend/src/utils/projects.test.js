@@ -18,8 +18,8 @@ describe('availability', () => {
   it('names the dependencies that are not complete, including unknown ones', () => {
     expect(availability({ status: 'TODO', dependsOn: ['design', 'build', 'abcdef123456'] }, projects)).toEqual({
       state: 'blocked',
-      blockedBy: ['Build', 'Unknown project (abcdef12)'],
-      label: 'Blocked by Build, Unknown project (abcdef12)',
+      blockedBy: ['Build', 'an unknown project'],
+      label: 'Blocked by Build, an unknown project',
     });
   });
 

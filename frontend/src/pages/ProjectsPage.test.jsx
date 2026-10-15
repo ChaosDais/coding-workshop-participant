@@ -42,7 +42,7 @@ describe('projects page', () => {
     const build = (await screen.findByText('Build')).closest('tr');
     expect(within(build).getByText('To do')).toBeTruthy();
     expect(within(build).getByText('Morgan Manager')).toBeTruthy();
-    expect(within(build).getByText('12.5 h')).toBeTruthy();
+    expect(within(build).getByText('12 h 30 min')).toBeTruthy();
     expect(within(build).getByText('Blocked by Design')).toBeTruthy();
     expect(within(screen.getByText('Design').closest('tr')).getByText('Available')).toBeTruthy();
     expect(screen.queryByText('Pilot')).toBeNull();

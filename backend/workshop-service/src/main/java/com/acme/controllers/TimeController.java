@@ -45,7 +45,9 @@ public class TimeController implements Controller {
                 .post(MILESTONE + "/timer", WORKERS, request -> ApiResponse.created(service.startTimer(
                         request.param("projectId"), request.param("milestoneId"), request.optionalField("note"),
                         request.user())))
-                .get("/timer", WORKERS, request -> ApiResponse.ok(service.runningTimer(request.user())))
+                // 204 rather than 404 when none runs: CloudFront turns 404s into the frontend's index page.
+                .get("/timer", WORKERS, request -> service.runningTimer(request.user())
+                        .map(ApiResponse::ok).orElseGet(ApiResponse::noContent))
                 .post("/timer/stop", WORKERS, request -> ApiResponse.ok(service.stopTimer(request.user())))
                 .put("/time/{id}", Access.roles(Role.ADMIN), request -> {
                     Correction correction = request.body(Correction.class);

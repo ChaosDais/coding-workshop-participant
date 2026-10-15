@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import AuditTable from '../components/AuditTable.jsx';
 import ErrorMessage from '../components/ErrorMessage.jsx';
+import Loading from '../components/Loading.jsx';
 import { useLoader } from '../hooks/useLoader.js';
 import { auditApi, usersApi } from '../services/api.js';
 import { ACTION_GROUPS, actionLabel } from '../utils/audit.js';
@@ -93,7 +94,7 @@ function AuditLogPage() {
       {dateError && <p className="field-error" id="audit-date-error">{dateError}</p>}
 
       <ErrorMessage error={error} onRetry={reload} />
-      {loading && <p className="muted" role="status">Loading the audit log…</p>}
+      {loading && <Loading>Loading the audit log…</Loading>}
       {data && (
         <>
           <p className="muted">{`${data.entries.length} ${data.entries.length === 1 ? 'entry' : 'entries'}${data.entries.length === filters.limit ? ' (more may exist; narrow the filters or show more)' : ''}`}</p>

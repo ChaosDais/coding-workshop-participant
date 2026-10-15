@@ -129,7 +129,7 @@ final class ProjectRules {
                 }
                 if (!byId.containsKey(dependency)) {
                     throw new IllegalArgumentException("Milestone '" + milestone.name()
-                            + "' depends on a milestone that is not part of this project: " + dependency);
+                            + "' depends on a milestone that is not part of this project");
                 }
             }
         }

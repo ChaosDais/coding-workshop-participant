@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import ErrorMessage from '../components/ErrorMessage.jsx';
+import Loading from '../components/Loading.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { useLoader } from '../hooks/useLoader.js';
 import { projectsApi, usersApi } from '../services/api.js';
@@ -46,7 +47,7 @@ function TeamPage() {
       </div>
 
       <ErrorMessage error={error} onRetry={reload} />
-      {loading && !data && <p className="muted" role="status">Loading your team…</p>}
+      {loading && !data && <Loading>Loading your team…</Loading>}
       {data && data.team.length === 0 && <p className="muted">No employees report to you yet. An admin assigns employees to managers.</p>}
       {data && data.team.length > 0 && (rows.length === 0 ? <p className="muted">Nobody matches this search.</p> : (
         <div className="table-wrap">

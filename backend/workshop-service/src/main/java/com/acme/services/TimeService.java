@@ -42,6 +42,7 @@ public class TimeService {
     public static final Duration MAX_TIMER = Duration.ofHours(8);
     private static final BigDecimal SMALLEST_ENTRY = new BigDecimal("0.01");
     private static final BigDecimal SECONDS_PER_HOUR = new BigDecimal("3600");
+    private static final String PROJECT_NOT_FOUND = "This project was not found; it may have been archived";
 
     private final TimeEntryRepository entries;
     private final ProjectRepository projects;
@@ -66,7 +67,7 @@ public class TimeService {
         }
         BigDecimal rounded = hours.setScale(2, RoundingMode.HALF_UP).max(SMALLEST_ENTRY);
         activeTimer(worker).ifPresent(running -> {
-            throw new ConflictException("Stop your running timer on milestone " + running.milestoneId()
+            throw new ConflictException("Stop your running timer on " + milestoneName(running)
                     + " before logging hours by hand");
         });
         BigDecimal rate = hourlyRate(worker);
@@ -74,7 +75,7 @@ public class TimeService {
                 TimeEntry.Source.MANUAL, blankToNull(note), null, null, rounded, rate, cost(rounded, rate),
                 clock.instant(), null, null, null);
         entries.insertLogged(entry);
-        audit("time_logged", entry, worker.email(), Map.of());
+        audit("time_logged", entry, worker, Map.of());
         return entry.withoutPay();
     }
 
@@ -87,7 +88,7 @@ public class TimeService {
                 TimeEntry.Source.TIMER, blankToNull(note), now, null, null, null, null, now, null, null, null);
         // The database refuses a second running timer, so two simultaneous starts cannot both succeed.
         entries.insertRunning(timer);
-        audit("timer_started", timer, worker.email(), Map.of());
+        audit("timer_started", timer, worker, Map.of());
         return timer.withoutPay();
     }
 
@@ -97,15 +98,15 @@ public class TimeService {
      * was still done.
      */
     public TimeEntry stopTimer(User worker) {
+        // A conflict, not 404: CloudFront would turn a 404 into the frontend's index page.
         TimeEntry running = entries.findRunning(worker.id())
-                .orElseThrow(() -> new NotFoundException("No timer is running"));
+                .orElseThrow(() -> new ConflictException("No timer is running"));
         return finish(running, worker, "timer_stopped").withoutPay();
     }
 
-    /** The user's running timer; one that has reached 8 hours is closed first, and then there is none. */
-    public TimeEntry runningTimer(User worker) {
-        return activeTimer(worker).map(TimeEntry::withoutPay)
-                .orElseThrow(() -> new NotFoundException("No timer is running"));
+    /** The user's running timer, if any; one that has reached 8 hours is closed first, and then there is none. */
+    public Optional<TimeEntry> runningTimer(User worker) {
+        return activeTimer(worker).map(TimeEntry::withoutPay);
     }
 
     /**
@@ -115,7 +116,7 @@ public class TimeService {
      */
     public TimeEntry correct(String entryId, BigDecimal hours, String note, String reason, User admin) {
         TimeEntry entry = entries.findById(entryId)
-                .orElseThrow(() -> new NotFoundException("Time entry " + entryId + " not found"));
+                .orElseThrow(() -> new NotFoundException("This time entry was not found"));
         if (entry.running()) {
             throw new ConflictException("This timer is still running; it can be corrected once it has stopped");
         }
@@ -137,7 +138,7 @@ public class TimeService {
         details.put("previousHours", entry.hours().toPlainString());
         details.put("previousCost", entry.cost().toPlainString());
         details.put("reason", corrected.correctionReason());
-        audit("time_corrected", corrected, admin.email(), details);
+        audit("time_corrected", corrected, admin, details);
         return corrected;
     }
 
@@ -147,7 +148,7 @@ public class TimeService {
      */
     public List<TimeEntry> findForMilestone(String projectId, String milestoneId, User actor) {
         Project project = projects.findById(projectId)
-                .orElseThrow(() -> new NotFoundException("Project " + projectId + " not found"));
+                .orElseThrow(() -> new NotFoundException(PROJECT_NOT_FOUND));
         Milestone milestone = requireMilestone(project, milestoneId);
         List<TimeEntry> logged = entries.findForMilestone(projectId, milestoneId);
         return switch (actor.role()) {
@@ -191,7 +192,7 @@ public class TimeService {
         if (!entries.stop(finished)) {
             throw new NotFoundException("No timer is running");
         }
-        audit(action, finished, worker.email(), Map.of());
+        audit(action, finished, worker, Map.of());
         return finished;
     }
 
@@ -201,7 +202,7 @@ public class TimeService {
      */
     private void requireWorkable(String projectId, String milestoneId, User worker) {
         Project project = projects.findById(projectId)
-                .orElseThrow(() -> new NotFoundException("Project " + projectId + " not found"));
+                .orElseThrow(() -> new NotFoundException(PROJECT_NOT_FOUND));
         Milestone milestone = requireMilestone(project, milestoneId);
         boolean allowed = switch (worker.role()) {
             case ADMIN -> true;
@@ -241,7 +242,7 @@ public class TimeService {
         return project.milestones().stream()
                 .filter(milestone -> milestone.id().equals(milestoneId))
                 .findFirst()
-                .orElseThrow(() -> new NotFoundException("Milestone " + milestoneId + " not found"));
+                .orElseThrow(() -> new NotFoundException("This milestone was not found; it may have been archived"));
     }
 
     /** Annual salary / 2080, to four decimals; someone without a salary costs nothing. */
@@ -258,12 +259,28 @@ public class TimeService {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
-    private void audit(String action, TimeEntry entry, String actor, Map<String, Object> extra) {
+    /** The name of the milestone a timer or entry is on, for messages; "another milestone" if it is gone. */
+    private String milestoneName(TimeEntry entry) {
+        return projects.findById(entry.projectId())
+                .flatMap(project -> project.milestones().stream()
+                        .filter(milestone -> milestone.id().equals(entry.milestoneId())).findFirst())
+                .map(milestone -> "'" + milestone.name() + "'")
+                .orElse("another milestone");
+    }
+
+    private void audit(String action, TimeEntry entry, User actor, Map<String, Object> extra) {
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("timeEntryId", entry.id());
         details.put("employeeId", entry.userId());
+        users.findById(entry.userId()).ifPresent(worker -> details.put("employeeName", worker.name()));
         details.put("projectId", entry.projectId());
         details.put("milestoneId", entry.milestoneId());
+        // Names are stored too, so the log stays readable after renames or archiving.
+        projects.findById(entry.projectId()).ifPresent(project -> {
+            details.put("projectName", project.name());
+            project.milestones().stream().filter(milestone -> milestone.id().equals(entry.milestoneId()))
+                    .findFirst().ifPresent(milestone -> details.put("milestoneName", milestone.name()));
+        });
         if (entry.hours() != null) {
             details.put("hours", entry.hours().toPlainString());
         }

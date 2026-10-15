@@ -17,7 +17,7 @@ class AuditServiceTest {
         AuditService auditService = new AuditService(new InMemoryAuditRepository(), Clock.systemUTC());
 
         AuditEntry first = auditService.recordAction("create", "alice", Map.of("resource", "order-42"));
-        AuditEntry defaulted = auditService.recordAction(" ", null, null);
+        AuditEntry defaulted = auditService.recordAction(" ", (String) null, null);
 
         assertEquals(List.of(defaulted, first), auditService.getAuditEntries());
         assertEquals("unknown_action", defaulted.action());

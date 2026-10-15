@@ -1,5 +1,5 @@
 import PropTypes from 'prop-types';
-import { actionLabel, describeDetails } from '../utils/audit.js';
+import { actionLabel, actorName, describeDetails } from '../utils/audit.js';
 import { formatTimestamp } from '../utils/format.js';
 
 /**
@@ -30,7 +30,7 @@ function AuditTable({ entries, names = {}, empty = 'No history yet.' }) {
             <tr key={entry.id}>
               <td className="nowrap">{formatTimestamp(entry.timestamp)}</td>
               <td>{actionLabel(entry.action)}</td>
-              <td>{entry.actor}</td>
+              <td>{actorName(entry, names)}</td>
               <td>{describeDetails(entry, names)}</td>
             </tr>
           ))}

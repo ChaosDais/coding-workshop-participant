@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import ErrorMessage from '../components/ErrorMessage.jsx';
+import Loading from '../components/Loading.jsx';
 import HoursProgress from '../components/HoursProgress.jsx';
 import Modal from '../components/Modal.jsx';
 import ProjectForm from '../components/ProjectForm.jsx';
@@ -12,7 +13,7 @@ import { projectsApi } from '../services/api.js';
 import { loadProjectsAndPeople } from '../services/projectData.js';
 import { availability, projectRows } from '../utils/projects.js';
 import {
-  STATUSES, formatDate, formatTimestamp, statusLabel,
+  STATUSES, formatDate, formatHours, formatTimestamp, statusLabel,
 } from '../utils/format.js';
 import { byId } from '../utils/users.js';
 
@@ -48,7 +49,7 @@ function ProjectsPage() {
       managers: data.users.filter((person) => person.role === 'MANAGER' && !person.archived),
       // Managers of any loaded project, archived or not, so filtering by an archived manager still works.
       projectManagers: [...new Set([...data.active, ...data.archived].map((project) => project.manager))]
-        .map((id) => data.users.find((person) => person.id === id) ?? { id, name: `Unknown (${id.slice(0, 8)})` })
+        .map((id) => data.users.find((person) => person.id === id) ?? { id, name: 'Unknown manager' })
         .sort((a, b) => a.name.localeCompare(b.name)),
     };
   }, [data]);
@@ -112,7 +113,7 @@ function ProjectsPage() {
       </div>
 
       <ErrorMessage error={error} onRetry={reload} />
-      {loading && !data && <p className="muted" role="status">Loading projects…</p>}
+      {loading && !data && <Loading>Loading projects…</Loading>}
 
       {data && data.active.length === 0 && data.archived.length === 0 && (
         <p className="muted">
@@ -138,6 +139,7 @@ function ProjectsPage() {
                   <th scope="col">Start</th>
                   <th scope="col">Expected end</th>
                   {showingCompleted && <th scope="col">Completed</th>}
+                  <th scope="col" className="numeric">Expected</th>
                   <th scope="col" className="numeric">Progress</th>
                   <th scope="col">Availability</th>
                 </tr>
@@ -169,10 +171,11 @@ function ProjectsPage() {
                           </ul>
                         </td>
                       )}
-                      {isAdmin && <td>{lookups.users.get(project.manager)?.name ?? project.manager}</td>}
+                      {isAdmin && <td>{lookups.users.get(project.manager)?.name ?? 'Unknown manager'}</td>}
                       <td className="nowrap">{formatDate(project.startDate)}</td>
                       <td className="nowrap">{formatDate(project.endDate)}</td>
                       {showingCompleted && <td className="nowrap">{project.completedAt ? formatTimestamp(project.completedAt) : '—'}</td>}
+                      <td className="numeric nowrap">{project.expectedHours == null ? '—' : formatHours(project.expectedHours)}</td>
                       <td className="numeric">
                         <HoursProgress progress={project.progressTime} expected={project.expectedHours} showOverrun={!isEmployee} label={project.name} />
                       </td>

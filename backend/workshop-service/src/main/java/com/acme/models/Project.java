@@ -38,7 +38,7 @@ public record Project(String id, String name, String description, LocalDate star
         Set<String> milestoneIds = new HashSet<>();
         for (Milestone milestone : milestones) {
             if (!milestoneIds.add(milestone.id())) {
-                throw new IllegalArgumentException("Duplicate milestone id: " + milestone.id());
+                throw new IllegalArgumentException("Milestone '" + milestone.name() + "' appears more than once");
             }
         }
         if (expectedHours != null) {

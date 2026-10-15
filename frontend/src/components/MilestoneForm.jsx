@@ -90,7 +90,7 @@ function MilestoneForm({
   const assignable = [...team];
   values.assignedEmployees.forEach((id) => {
     if (!assignable.some((employee) => employee.id === id)) {
-      assignable.push(usersById.get(id) ?? { id, name: `Unknown user (${id.slice(0, 8)})` });
+      assignable.push(usersById.get(id) ?? { id, name: 'Former team member' });
     }
   });
   const others = milestones.filter((other) => other.id !== milestone?.id);

@@ -137,14 +137,15 @@ class HandlerTest {
 
     @Test
     void managersAndEmployeesMustBeActiveUsersInTheRightRole() {
+        // Messages name the person; an id that matches nobody is described by its field.
         assertTrue(error(send("POST", "/projects", projectJson.replace(managerId, employeeId)))
-                .startsWith("manager must reference an active manager"));
-        assertTrue(error(send("POST", "/projects", projectJson.replace(managerId, "nobody")))
-                .startsWith("manager must reference an active manager"));
+                .endsWith(" is not an active manager"));
+        assertEquals("manager must be an active manager",
+                error(send("POST", "/projects", projectJson.replace(managerId, "nobody"))));
 
         String id = body(send("POST", "/projects", projectJson)).getAsJsonObject().get("id").getAsString();
         assertTrue(error(send("POST", "/projects/" + id + "/milestones", milestoneJson.replace(employeeId, managerId)))
-                .startsWith("assignedEmployees must reference an active employee"));
+                .endsWith(" is not an active employee"));
         String milestoneId = body(send("POST", "/projects/" + id + "/milestones", milestoneJson)).getAsJsonObject()
                 .get("id").getAsString();
 

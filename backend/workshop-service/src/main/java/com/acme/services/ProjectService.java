@@ -21,6 +21,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -85,7 +86,7 @@ public class ProjectService {
      */
     public List<Milestone> milestones(String projectId, boolean archived, User actor) {
         if (actor.role() == Role.ADMIN && !projects.exists(projectId)) {
-            throw new NotFoundException("Project " + projectId + " not found");
+            throw new NotFoundException("This project was not found; it may have been archived");
         }
         if (actor.role() == Role.ADMIN && archived) {
             return projects.findArchivedMilestones(projectId);
@@ -100,7 +101,7 @@ public class ProjectService {
     /** The active project, if this user may see it. */
     Project require(String id, User actor) {
         Project project = projects.findById(id)
-                .orElseThrow(() -> new NotFoundException("Project " + id + " not found"));
+                .orElseThrow(() -> new NotFoundException("This project was not found; it may have been archived"));
         if (!canSee(project, actor)) {
             throw new ForbiddenException("Access denied");
         }
@@ -153,7 +154,7 @@ public class ProjectService {
     public ProjectView create(Project project, User actor) {
         // Archived projects keep their ids, so an id can never be reused.
         if (projects.exists(project.id())) {
-            throw new ConflictException("A project with id " + project.id() + " already exists");
+            throw new ConflictException("A project with this id already exists");
         }
         requireActiveUser(project.manager(), Role.MANAGER, "manager");
         project.milestones().forEach(milestone -> requireEmployees(milestone, Set.of(), project.manager()));
@@ -218,14 +219,14 @@ public class ProjectService {
         }
         if (!projects.archive(id)) {
             // Archived by another request between the lookup and the write.
-            throw new NotFoundException("Project " + id + " not found");
+            throw new NotFoundException("This project was not found; it may have been archived");
         }
         audit("project_archived", project, null, actor);
     }
 
     public ProjectView restore(String id, User actor) {
         if (!projects.restore(id)) {
-            throw new NotFoundException("Archived project " + id + " not found");
+            throw new NotFoundException("This archived project was not found");
         }
         Project project = require(id, actor);
         audit("project_restored", project, null, actor);
@@ -235,7 +236,7 @@ public class ProjectService {
     public Milestone addMilestone(String projectId, Milestone milestone, User actor) {
         Project project = requireEditable(projectId, actor);
         if (project.milestones().stream().anyMatch(existing -> existing.id().equals(milestone.id()))) {
-            throw new ConflictException("A milestone with id " + milestone.id() + " already exists");
+            throw new ConflictException("A milestone with this id already exists");
         }
         requireEmployees(milestone, Set.of(), project.manager());
         List<Milestone> milestones = new ArrayList<>(project.milestones());
@@ -299,7 +300,7 @@ public class ProjectService {
         if (!projects.setMilestoneStatus(projectId, milestoneId, status, changed.completedAt(),
                 changed.statusChangedAt())) {
             // Archived by another request between the lookup and the write.
-            throw new NotFoundException("Milestone " + milestoneId + " not found");
+            throw new NotFoundException("This milestone was not found; it may have been archived");
         }
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("from", milestone.status().name());
@@ -430,7 +431,7 @@ public class ProjectService {
     }
 
     private String employeeName(String employeeId) {
-        return users.findById(employeeId).map(User::name).orElse("Employee " + employeeId);
+        return users.findById(employeeId).map(User::name).orElse("An unknown employee");
     }
 
     private void auditAssignment(String action, Project project, Milestone milestone, String employeeId, User actor,
@@ -476,7 +477,7 @@ public class ProjectService {
                 }
                 if (projects.findById(dependency).isEmpty()) {
                     throw new IllegalArgumentException("Project '" + after.name()
-                            + "' depends on a project that does not exist or is archived: " + dependency);
+                            + "' depends on a project that does not exist or is archived");
                 }
             }
             requireNoProjectCycle(after);
@@ -556,7 +557,7 @@ public class ProjectService {
                 return index;
             }
         }
-        throw new NotFoundException("Milestone " + milestoneId + " not found");
+        throw new NotFoundException("This milestone was not found; it may have been archived");
     }
 
     private static Set<String> assignedBefore(Project project, Milestone milestone) {
@@ -578,23 +579,24 @@ public class ProjectService {
             }
             User employee = requireActiveUser(employeeId, Role.EMPLOYEE, "assignedEmployees");
             if (!projectManagerId.equals(employee.managerId())) {
-                throw new IllegalArgumentException("assignedEmployees must be on the project manager's team: "
-                        + employeeId);
+                throw new IllegalArgumentException(employee.name()
+                        + " is not on the project manager's team, so cannot be assigned to this project");
             }
         }
     }
 
     private User requireActiveUser(String userId, Role role, String field) {
-        return users.findById(userId)
-                .filter(user -> !user.archived() && user.role() == role)
-                .orElseThrow(() -> new IllegalArgumentException(field + " must reference an active "
-                        + role.name().toLowerCase() + " by user id: " + userId));
+        Optional<User> found = users.findById(userId);
+        return found.filter(user -> !user.archived() && user.role() == role)
+                .orElseThrow(() -> new IllegalArgumentException(found
+                        .map(user -> user.name() + " is not an active " + role.name().toLowerCase())
+                        .orElse(field + " must be an active " + role.name().toLowerCase())));
     }
 
     private void save(Project project) {
         if (!projects.replace(project)) {
             // Archived by another request between the lookup and the write.
-            throw new NotFoundException("Project " + project.id() + " not found");
+            throw new NotFoundException("This project was not found; it may have been archived");
         }
     }
 
@@ -613,6 +615,6 @@ public class ProjectService {
             details.put("milestoneName", milestone.name());
         }
         details.putAll(extra);
-        auditService.recordAction(action, actor.email(), details);
+        auditService.recordAction(action, actor, details);
     }
 }
