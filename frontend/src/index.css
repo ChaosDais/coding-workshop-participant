@@ -508,5 +508,5 @@ table.compact tbody tr:last-child td { border-bottom: 0; }
 .pagination-bar.bottom { justify-content: flex-end; }
 .pagination { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
 .pagination button { min-width: 2.2rem; padding: 0.3rem 0.55rem; }
-.pagination-page { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; }
+.pagination-page, .pagination-page label { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; margin: 0; }
 .pagination-page input { width: 4.5rem; padding: 0.3rem 0.4rem; text-align: center; }

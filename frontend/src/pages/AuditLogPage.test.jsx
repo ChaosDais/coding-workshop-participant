@@ -93,4 +93,28 @@ describe('audit log page', () => {
     expect(await screen.findByText('Showing 21–25 of 25 entries')).toBeTruthy();
     expect(again.value).toBe('3');
   });
+
+  it('confirms a typed page with Go, keeps it when Apply has no new filters, and moves at once with the arrow keys', async () => {
+    const user = userEvent.setup();
+    render(<AuditLogPage />);
+    await screen.findByText(/Project 25/);
+    await user.selectOptions(screen.getByLabelText('Per page'), '10');
+    await screen.findByText('Showing 1–10 of 25 entries');
+    const top = () => screen.getByRole('navigation', { name: 'Audit log pages, top' });
+
+    await user.clear(within(top()).getByLabelText('Page number'));
+    await user.type(within(top()).getByLabelText('Page number'), '3');
+    await user.click(within(top()).getByRole('button', { name: 'Go' }));
+    expect(await screen.findByText('Showing 21–25 of 25 entries')).toBeTruthy();
+
+    // Apply with the same filters stays on the page; new filters start again from page 1.
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(screen.getByText('Showing 21–25 of 25 entries')).toBeTruthy();
+    expect(within(top()).getByLabelText('Page number').value).toBe('3');
+
+    await user.click(within(top()).getByLabelText('Page number'));
+    await user.keyboard('{ArrowDown}');
+    expect(await screen.findByText('Showing 11–20 of 25 entries')).toBeTruthy();
+    expect(within(top()).getByLabelText('Page number').value).toBe('2');
+  });
 });

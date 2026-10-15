@@ -44,15 +44,18 @@ function AuditLogPage() {
 
   const apply = (event) => {
     event.preventDefault();
-    if (!dateError) {
+    // Only new filters start again from page 1; Apply with the same filters keeps the page.
+    if (!dateError && JSON.stringify(draft) !== JSON.stringify(filters)) {
       setFilters(draft);
       setPage(1);
     }
   };
   const clear = () => {
     setDraft(NO_FILTERS);
-    setFilters(NO_FILTERS);
-    setPage(1);
+    if (JSON.stringify(filters) !== JSON.stringify(NO_FILTERS)) {
+      setFilters(NO_FILTERS);
+      setPage(1);
+    }
   };
   const changePerPage = (event) => {
     setPerPage(Number(event.target.value));
