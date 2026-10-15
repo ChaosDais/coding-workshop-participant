@@ -1,13 +1,18 @@
 package com.acme.repos;
 
 import com.acme.errors.ConflictException;
+import com.acme.models.DailyHours;
 import com.acme.models.TimeEntry;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -85,6 +90,24 @@ public class InMemoryTimeEntryRepository implements TimeEntryRepository {
         return entries.stream()
                 .filter(entry -> entry.userId().equals(userId) && entry.hours() != null)
                 .sorted(Comparator.comparing(TimeEntry::loggedAt))
+                .toList();
+    }
+
+    @Override
+    public synchronized List<DailyHours> dailyHours() {
+        record Key(String userId, String projectId, String milestoneId, LocalDate day) { }
+        Map<Key, BigDecimal> sums = new LinkedHashMap<>();
+        for (TimeEntry entry : entries) {
+            if (entry.hours() != null) {
+                Instant at = entry.startedAt() != null ? entry.startedAt() : entry.loggedAt();
+                sums.merge(new Key(entry.userId(), entry.projectId(), entry.milestoneId(),
+                        at.atZone(ZoneOffset.UTC).toLocalDate()), entry.hours(), BigDecimal::add);
+            }
+        }
+        return sums.entrySet().stream()
+                .map(sum -> new DailyHours(sum.getKey().userId(), sum.getKey().projectId(),
+                        sum.getKey().milestoneId(), sum.getKey().day(), sum.getValue()))
+                .sorted(Comparator.comparing(DailyHours::day))
                 .toList();
     }
 

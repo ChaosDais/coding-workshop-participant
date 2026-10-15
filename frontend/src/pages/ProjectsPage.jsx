@@ -266,6 +266,7 @@ function ProjectsPage() {
                               showOverrun={!isEmployee}
                             showStatusAge={!isEmployee}
                               highlightUserId={isEmployee ? user.id : undefined}
+                            everyonesHours={!isEmployee}
                               onArchiveMilestone={isAdmin && !archived ? (milestone) => archiveMilestone(project, milestone) : undefined}
                               busy={busy}
                             />

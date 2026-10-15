@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Employees see only their assigned work and their team, edit only their own name and email, move their
- * milestones to AWAITING_REVIEW, and log time that adds to milestone progress and project spending.
+ * milestones between TODO, IN_PROGRESS and AWAITING_REVIEW, and log time that adds to milestone progress and project spending.
  */
 class EmployeeTest {
     private final TestApp app = new TestApp();
@@ -93,6 +93,48 @@ class EmployeeTest {
         return body(app.send("GET", "/projects/" + projectId, null, adminToken)).getAsJsonObject()
                 .getAsJsonArray("milestones").asList().stream().map(JsonElement::getAsJsonObject)
                 .filter(found -> found.get("id").getAsString().equals(milestone)).findFirst().orElseThrow();
+    }
+
+    @Test
+    void projectsCarryEachPersonsHoursPerMilestoneButEmployeesSeeOnlyTheirOwn() {
+        assertEquals(201, status(send("POST", milestonePath(milestoneId) + "/time", "{\"hours\": 1.5}")));
+        assertEquals(201, status(app.send("POST", milestonePath(milestoneId) + "/time", "{\"hours\": 2}",
+                managerToken)));
+
+        JsonObject asManager = body(app.send("GET", "/projects/" + projectId, null, managerToken)).getAsJsonObject()
+                .getAsJsonObject("hoursByMilestone").getAsJsonObject(milestoneId);
+        assertEquals(0, new BigDecimal("1.50").compareTo(asManager.get(employeeId).getAsBigDecimal()));
+        assertEquals(0, new BigDecimal("2.00").compareTo(asManager.get(managerId).getAsBigDecimal()));
+
+        // In the project list too; employees see only their own hours.
+        JsonObject asEmployee = body(send("GET", "/projects", null)).getAsJsonArray().get(0).getAsJsonObject()
+                .getAsJsonObject("hoursByMilestone").getAsJsonObject(milestoneId);
+        assertEquals(List.of(employeeId), List.copyOf(asEmployee.keySet()));
+    }
+
+    @Test
+    void loggedHoursComeByPersonMilestoneAndDayForTheWorkloadChart() {
+        assertEquals(201, status(send("POST", milestonePath(milestoneId) + "/time", "{\"hours\": 1.5}")));
+        assertEquals(201, status(send("POST", milestonePath(milestoneId) + "/time", "{\"hours\": 0.5}")));
+        app.clock.advance(Duration.ofDays(1));
+        employeeToken = app.signIn("employee@example.com", PASSWORD).get("accessToken").getAsString();
+        assertEquals(201, status(send("POST", milestonePath(milestoneId) + "/time", "{\"hours\": 3}")));
+
+        adminToken = app.signIn(TestApp.ADMIN_EMAIL, PASSWORD).get("accessToken").getAsString();
+        List<JsonObject> days = body(app.send("GET", "/time/daily", null, adminToken)).getAsJsonArray().asList()
+                .stream().map(JsonElement::getAsJsonObject).toList();
+        assertEquals(List.of("2026-10-14", "2026-10-15"), days.stream().map(day -> day.get("day").getAsString())
+                .toList());
+        assertEquals(0, new BigDecimal("2.00").compareTo(days.get(0).get("hours").getAsBigDecimal()));
+        assertEquals(employeeId, days.get(0).get("userId").getAsString());
+        assertEquals(milestoneId, days.get(0).get("milestoneId").getAsString());
+
+        // Their manager sees their team's hours; another manager sees none of them; employees cannot ask.
+        managerToken = app.signIn("manager@example.com", PASSWORD).get("accessToken").getAsString();
+        assertEquals(2, body(app.send("GET", "/time/daily", null, managerToken)).getAsJsonArray().size());
+        String otherToken = app.signIn("other-manager@example.com", PASSWORD).get("accessToken").getAsString();
+        assertEquals(0, body(app.send("GET", "/time/daily", null, otherToken)).getAsJsonArray().size());
+        assertEquals(403, status(send("GET", "/time/daily", null)));
     }
 
     @Test
@@ -182,13 +224,20 @@ class EmployeeTest {
     }
 
     @Test
-    void employeesSendTheirMilestonesForReviewButCannotCompleteThem() {
+    void employeesSetTheirMilestonesToTodoInProgressOrReviewButCannotCompleteThem() {
+        // Back to TODO and on to IN_PROGRESS again, for work paused or picked up.
+        assertEquals(200, status(send("PUT", milestonePath(milestoneId) + "/status", "{\"status\": \"TODO\"}")));
+        assertEquals("TODO", milestoneAsAdmin(milestoneId).get("status").getAsString());
+        assertEquals(200, status(send("PUT", milestonePath(milestoneId) + "/status",
+                "{\"status\": \"IN_PROGRESS\"}")));
+        assertEquals("IN_PROGRESS", milestoneAsAdmin(milestoneId).get("status").getAsString());
+
         Map<String, Object> submitted = send("PUT", milestonePath(milestoneId) + "/status",
                 "{\"status\": \"AWAITING_REVIEW\"}");
         assertEquals(200, status(submitted));
         assertEquals("AWAITING_REVIEW", milestoneAsAdmin(milestoneId).get("status").getAsString());
 
-        assertEquals("Employees can only set a milestone to AWAITING_REVIEW",
+        assertEquals("Only a manager or admin can set a milestone to COMPLETE",
                 error(send("PUT", milestonePath(milestoneId) + "/status", "{\"status\": \"COMPLETE\"}")));
         assertEquals(403, status(send("PUT", milestonePath(teammateMilestoneId) + "/status",
                 "{\"status\": \"AWAITING_REVIEW\"}")));
@@ -198,6 +247,8 @@ class EmployeeTest {
                 "{\"status\": \"COMPLETE\"}", managerToken)));
         assertEquals("This milestone is already complete",
                 error(send("PUT", milestonePath(milestoneId) + "/status", "{\"status\": \"AWAITING_REVIEW\"}")));
+        assertEquals("This milestone is already complete",
+                error(send("PUT", milestonePath(milestoneId) + "/status", "{\"status\": \"TODO\"}")));
     }
 
     @Test

@@ -50,6 +50,9 @@ public class TimeController implements Controller {
                 .get("/timer", WORKERS, request -> service.runningTimer(request.user())
                         .map(ApiResponse::ok).orElseGet(ApiResponse::noContent))
                 .post("/timer/stop", WORKERS, request -> ApiResponse.ok(service.stopTimer(request.user())))
+                // For the workload chart: admins everyone's, managers their team's on their projects.
+                .get("/time/daily", Access.roles(Role.ADMIN, Role.MANAGER), request -> ApiResponse.ok(
+                        service.dailyHours(request.user())))
                 // Scoped by role in the service: admins anyone, managers their team, employees themselves.
                 .get("/users/{id}/time", Access.SIGNED_IN, request -> ApiResponse.ok(
                         service.contributions(request.param("id"), request.user())))

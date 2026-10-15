@@ -104,14 +104,19 @@ describe('employee view', () => {
     expect(screen.queryByText('Spent')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Add Milestone' })).toBeNull();
     expect(within(design).getByText('You')).toBeTruthy();
-    expect(within(design).queryByRole('combobox')).toBeNull();
+    // Their own milestone's status: TODO, IN PROGRESS or AWAITING REVIEW, never COMPLETE.
+    const status = within(design).getByRole('combobox', { name: 'Status of Design' });
+    expect([...status.options].map((option) => option.textContent)).toEqual(['TODO', 'IN PROGRESS', 'AWAITING REVIEW']);
+    expect(within(screen.getByText('Build', { selector: 'strong' }).closest('tr')).queryByRole('combobox')).toBeNull();
 
     // Time controls sit on their own line, only under their own milestone.
     expect(screen.getByRole('group', { name: 'Time on Design' })).toBeTruthy();
     expect(screen.queryByRole('group', { name: 'Time on Build' })).toBeNull();
 
-    await user.click(within(design).getByRole('button', { name: 'Send for Review' }));
+    await user.selectOptions(status, 'AWAITING_REVIEW');
     expect(calls).toContainEqual({ name: 'status', body: { status: 'AWAITING_REVIEW' } });
+    await user.selectOptions(within(design).getByRole('combobox', { name: 'Status of Design' }), 'TODO');
+    expect(calls).toContainEqual({ name: 'status', body: { status: 'TODO' } });
 
     await user.click(within(screen.getByRole('group', { name: 'Time on Design' })).getByRole('button', { name: 'Time Log' }));
     expect(await screen.findByText('Wireframes')).toBeTruthy();

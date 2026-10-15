@@ -10,6 +10,7 @@ import ProjectDetailPage from './pages/ProjectDetailPage.jsx';
 import ProjectsPage from './pages/ProjectsPage.jsx';
 import SignInPage from './pages/SignInPage.jsx';
 import TeamPage from './pages/TeamPage.jsx';
+import WorkloadPage from './pages/WorkloadPage.jsx';
 import { SettingsProvider } from './settings/SettingsContext.jsx';
 import TimerBar from './components/TimerBar.jsx';
 import { TimerProvider } from './timer/TimerContext.jsx';
@@ -22,6 +23,9 @@ function pageFor(user, section, id) {
   const isAdmin = user.role === 'ADMIN';
   if (section === 'employees' && user.role !== 'EMPLOYEE') {
     return isAdmin ? <EmployeesPage /> : <TeamPage />;
+  }
+  if (section === 'workload' && user.role !== 'EMPLOYEE') {
+    return <WorkloadPage />;
   }
   if (section === 'audit' && isAdmin) {
     return <AuditLogPage />;

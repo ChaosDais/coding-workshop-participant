@@ -81,7 +81,7 @@ frontend/
   src/auth/AuthContext.jsx          signed-in user, sign-in/out, password change, token renewal
   src/pages/                        SignIn, ChangePassword (forced change only), Options (tabs: Account,
                                     Appearance, System for admins), Projects and ProjectDetail (every role;
-                                    employees get a reduced view), Employees and AuditLog (admins), Team
+                                    employees get a reduced view), Employees, Workload and AuditLog (admins), Team and Workload
                                     (managers), ApiTester (#/tester); on Employees and Team, an employee's
                                     row opens to show their work (EmployeeWork); on Employees, a manager's
                                     opens to show their projects, milestones and team (ManagerWork)
@@ -239,6 +239,7 @@ Authorization happens in two layers, so a missing check in one is caught by the 
 | `GET /projects/{id}/milestones/{mid}/time` | ✓ | scoped | own entries on own milestones | — |
 | `PUT /time/{id}` (correct an entry) | ✓ | — | — | — |
 | `GET /users/{id}/time` (assignments and hours by project and milestone) | ✓ | own team, own projects | themselves | — |
+| `GET /time/daily` (hours by person, milestone and day, for the Workload page) | ✓ | own team, own projects | — | — |
 | `GET /audit` | ✓ | — | — | — |
 | `GET /audit/page` | ✓ | — | — | — |
 | `GET /settings/bottlenecks` | ✓ | ✓ | ✓ | — |
@@ -254,7 +255,7 @@ A missing or invalid token returns `401`; a signed-in user without permission ge
 | Milestones visible | All in their projects | All in those projects |
 | Users visible | Active employees whose manager they are | Their manager, and active employees sharing that manager (themselves included) |
 | Project changes | Everything except `manager`, `description` and `dependsOn`; cannot create, archive or restore | None |
-| Milestone changes | Add, edit, archive and set any status in their projects | Only `AWAITING_REVIEW`, only on milestones assigned to them, never on a COMPLETE one |
+| Milestone changes | Add, edit, archive and set any status in their projects | Status only, to `TODO`, `IN_PROGRESS` or `AWAITING_REVIEW` (never `COMPLETE`), only on milestones assigned to them, never on a COMPLETE one |
 | Time | Log their own time and run a timer on any milestone of their projects; see hours logged on them | Log time and run a timer on their own milestones; see their own entries |
 | Archived records | Not visible | Not visible |
 
@@ -333,7 +334,10 @@ Checked in `services/ProjectService.java`, since they span projects:
   assigned to, on projects that are not complete or archived. A milestone's expected hours are split evenly
   between everyone assigned to it; milestones without expected hours are counted, but add no hours. Computed in
   the frontend (`workloadByEmployee` in `utils/projects.js`) from the project list, and shown on Employees, Team
-  and, for employees, their own project list.
+  and, for employees, their own project list. The Workload page (admins: everyone; managers: their team) charts
+  each employee's hours logged on those milestones over time against their workload, from `GET /time/daily`.
+- **Hours per person**: each project response carries `hoursByMilestone` (milestone id → user id → hours), shown
+  beside each person in the project list's expanded milestones. Employees receive only their own hours.
 - **Cost**: hours × hourly rate, where hourly rate = annual salary ÷ 2,080 (40 hours × 52 weeks). The rate is
   captured on each entry, so later pay changes do not alter past cost. A user without a salary costs 0.
 - **Corrections**: an admin can correct an entry's hours (0 to 24, where 0 voids it) with a required reason. The

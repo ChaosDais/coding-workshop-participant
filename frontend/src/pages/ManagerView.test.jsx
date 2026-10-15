@@ -81,7 +81,7 @@ describe('manager view', () => {
     window.location.hash = '#/projects';
     render(<App />);
     const nav = await screen.findByRole('navigation', { name: 'Main' });
-    expect([...nav.querySelectorAll('a')].map((link) => link.textContent)).toEqual(['Projects', 'Employees']);
+    expect([...nav.querySelectorAll('a')].map((link) => link.textContent)).toEqual(['Projects', 'Employees', 'Workload']);
     expect(await screen.findByRole('heading', { name: 'My Projects' })).toBeTruthy();
   });
 

@@ -40,17 +40,19 @@ export function actorName(entry, names = {}) {
  * something was called at the time; entries written before names were stored fall back to the lookups.
  * @param {{details: object}} entry Audit entry.
  * @param {{users?: Map<string, {name: string}>, milestones?: Map<string, {name: string}>}} names Lookups.
- * @returns {string} e.g. "Apollo · milestone Design · TODO → COMPLETE".
+ * @returns {string} e.g. "Apollo: Design · TODO → COMPLETE" (project: milestone).
  */
 export function describeDetails(entry, names = {}) {
   const details = entry.details ?? {};
   const parts = [];
-  if (details.projectName) {
-    parts.push(details.projectName);
-  }
-  if (details.milestoneId) {
-    const name = details.milestoneName ?? names.milestones?.get(details.milestoneId)?.name;
-    parts.push(`milestone ${name ?? '(unknown)'}`);
+  // "Project: Milestone" for changes to a milestone, or just the project's name.
+  const milestone = details.milestoneId
+    ? details.milestoneName ?? names.milestones?.get(details.milestoneId)?.name ?? 'Unknown milestone'
+    : undefined;
+  if (details.projectName && milestone) {
+    parts.push(`${details.projectName}: ${milestone}`);
+  } else if (details.projectName || milestone) {
+    parts.push(details.projectName ?? milestone);
   }
   if (details.userId) {
     const name = userName(details.userId, details.name, names.users);

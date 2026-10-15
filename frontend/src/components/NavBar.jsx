@@ -5,11 +5,13 @@ const LINKS = {
   ADMIN: [
     { section: 'projects', label: 'Projects', href: '#/projects' },
     { section: 'employees', label: 'Employees', href: '#/employees' },
+    { section: 'workload', label: 'Workload', href: '#/workload' },
     { section: 'audit', label: 'Audit log', href: '#/audit' },
   ],
   MANAGER: [
     { section: 'projects', label: 'Projects', href: '#/projects' },
     { section: 'employees', label: 'Employees', href: '#/employees' },
+    { section: 'workload', label: 'Workload', href: '#/workload' },
   ],
   EMPLOYEE: [
     { section: 'projects', label: 'Projects', href: '#/projects' },

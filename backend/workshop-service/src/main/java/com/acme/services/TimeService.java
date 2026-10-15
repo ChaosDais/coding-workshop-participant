@@ -4,6 +4,7 @@ import com.acme.errors.ConflictException;
 import com.acme.errors.ForbiddenException;
 import com.acme.errors.NotFoundException;
 import com.acme.models.CompletionStatus;
+import com.acme.models.DailyHours;
 import com.acme.models.Milestone;
 import com.acme.models.Project;
 import com.acme.models.Role;
@@ -27,8 +28,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 /**
  * People log their own time on milestones, either as a number of hours or with a timer: employees on milestones
@@ -255,6 +258,25 @@ public class TimeService {
         Instant last = logged.stream().map(TimeEntry::loggedAt).max(Comparator.naturalOrder()).orElse(null);
         return new MilestoneContribution(milestone.id(), milestone.name(), milestone.status(), archived, assigned,
                 hours, logged.size(), last);
+    }
+
+    /**
+     * Logged hours by person, milestone and day, for the workload chart. Admins see everyone's; a manager sees
+     * their active team's hours on the active projects they manage.
+     */
+    public List<DailyHours> dailyHours(User actor) {
+        List<DailyHours> days = entries.dailyHours();
+        if (actor.role() == Role.ADMIN) {
+            return days;
+        }
+        if (actor.role() != Role.MANAGER) {
+            throw new ForbiddenException("Access denied");
+        }
+        Set<String> team = users.findAll(false).stream()
+                .filter(user -> actor.id().equals(user.managerId())).map(User::id).collect(Collectors.toSet());
+        Set<String> managed = projects.findAll(false).stream()
+                .filter(project -> actor.id().equals(project.manager())).map(Project::id).collect(Collectors.toSet());
+        return days.stream().filter(day -> team.contains(day.userId()) && managed.contains(day.projectId())).toList();
     }
 
     /** The running timer, after closing it at 8 hours if it has run that long. */

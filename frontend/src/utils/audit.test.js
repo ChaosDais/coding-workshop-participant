@@ -15,14 +15,14 @@ describe('describeDetails', () => {
       },
     };
     expect(describeDetails(entry, { milestones: new Map([['m1', { name: 'Design' }]]) }))
-      .toBe('Apollo · milestone Design · TODO → COMPLETE');
+      .toBe('Apollo: Design · TODO → COMPLETE');
   });
 
   it('prefers the stored milestone name, so renamed or archived milestones keep their name', () => {
     const entry = { details: { projectName: 'Apollo', milestoneId: 'm1', milestoneName: 'Design' } };
     expect(describeDetails(entry, { milestones: new Map([['m1', { name: 'Renamed' }]]) }))
-      .toBe('Apollo · milestone Design');
-    expect(describeDetails({ details: { milestoneId: 'abcdef123456' } })).toBe('milestone (unknown)');
+      .toBe('Apollo: Design');
+    expect(describeDetails({ details: { milestoneId: 'abcdef123456' } })).toBe('Unknown milestone');
   });
 
   it('names people, falling back to the lookup for older entries', () => {
@@ -74,7 +74,7 @@ describe('names instead of ids', () => {
       details: {
         projectName: 'Apollo', milestoneId: 'm1', milestoneName: 'Design', employeeId: 'e1', employeeName: 'Ada', hours: '1.25',
       },
-    })).toBe('Apollo · milestone Design · Ada · 1 h 15 min');
+    })).toBe('Apollo: Design · Ada · 1 h 15 min');
     expect(describeDetails({
       details: {
         userId: 'e1', name: 'Ada', fromManagerId: 'm1', fromManagerName: 'Morgan', toManagerId: 'm2', toManagerName: 'Sam',

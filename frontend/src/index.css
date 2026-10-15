@@ -7,6 +7,7 @@
   --text: #1c2430;
   --text-muted: #5b6573;
   --accent: #2f5bd3;
+  --chart-line: #2f5bd3;
   --accent-text: #ffffff;
   --accent-soft: #e6ecfb;
   --danger: #c0392b;
@@ -36,6 +37,7 @@
     --text: #e6e9ee;
     --text-muted: #9aa4b2;
     --accent: #7b9cff;
+    --chart-line: #6a8cf5;
     --accent-text: #0d1220;
     --accent-soft: #232f4d;
     --danger: #ff7b6e;
@@ -59,6 +61,7 @@
   --text: #e6e9ee;
   --text-muted: #9aa4b2;
   --accent: #7b9cff;
+  --chart-line: #6a8cf5;
   --accent-text: #0d1220;
   --accent-soft: #232f4d;
   --danger: #ff7b6e;
@@ -182,6 +185,9 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 }
 .section-header h2 { margin: 0; }
 .toolbar, .filter-actions, .row-actions { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+/* In a table the actions cell stays a table cell, so its borders line up with the rest of the row. */
+td.row-actions { display: table-cell; white-space: nowrap; }
+td.row-actions > * + * { margin-left: 0.6rem; }
 .back-link { display: inline-block; margin-bottom: 0.8rem; text-decoration: none; }
 
 .filters {
@@ -422,7 +428,7 @@ tr.mine td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .expand-toggle:hover span { text-decoration: underline; }
 .expand-toggle .chevron { flex: none; transition: transform 0.15s; }
 .expand-toggle[aria-expanded='true'] .chevron { transform: rotate(90deg); }
-.project-name-cell { display: inline-flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+.project-name-cell { display: inline-flex; align-items: center; gap: 0.35rem; flex-wrap: nowrap; white-space: nowrap; }
 .icon-link {
   display: inline-flex;
   padding: 0.2rem;
@@ -510,3 +516,46 @@ table.compact tbody tr:last-child td { border-bottom: 0; }
 .pagination button { min-width: 2.2rem; padding: 0.3rem 0.55rem; }
 .pagination-page, .pagination-page label { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; margin: 0; }
 .pagination-page input { width: 4.5rem; padding: 0.3rem 0.4rem; text-align: center; }
+
+/* Workload page: one small chart per employee, on a shared scale */
+.page-intro { margin: -0.4rem 0 1rem; max-width: 70ch; }
+.workload-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.workload-card { display: grid; gap: 0.4rem; padding: 0.9rem 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); min-width: 0; }
+.workload-card > p { margin: 0; }
+.workload-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.6rem; }
+.workload-card-header h2 { margin: 0; font-size: 1rem; }
+.workload-card-header p { margin: 0.1rem 0 0; }
+.workload-figures { display: grid; justify-items: end; gap: 0.2rem; text-align: right; font-variant-numeric: tabular-nums; flex: none; white-space: nowrap; }
+.workload-card-header > div:first-child { min-width: 0; }
+.workload-without { margin: 0 0 1.5rem; }
+.workload-chart { position: relative; }
+.workload-chart svg { display: block; width: 100%; height: auto; overflow: visible; border-radius: 4px; }
+.workload-chart svg:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.chart-grid { stroke: var(--border); stroke-width: 1; }
+.chart-tick { fill: var(--text-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.chart-target { stroke: var(--text-muted); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.chart-target-label { fill: var(--text-muted); font-size: 10px; font-weight: 600; }
+.chart-area { fill: var(--chart-line); opacity: 0.1; }
+.chart-line { fill: none; stroke: var(--chart-line); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart-dot { fill: var(--chart-line); stroke: var(--surface); stroke-width: 2; }
+.chart-crosshair { stroke: var(--text-muted); stroke-width: 1; }
+.chart-tooltip {
+  position: absolute;
+  top: 0;
+  transform: translate(-50%, -100%);
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 15%);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 2;
+}
+.milestone-people { list-style: none; margin: 0.4rem 0 0; padding: 0; max-width: 32rem; display: grid; gap: 0.2rem; }
+.milestone-people li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.15rem 0; border-bottom: 1px solid var(--border); }
+.milestone-people li:last-child { border-bottom: 0; }
+.milestone-people-hours { font-variant-numeric: tabular-nums; white-space: nowrap; }

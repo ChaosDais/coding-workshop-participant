@@ -73,7 +73,7 @@ describe('signing in', () => {
     expect(await screen.findByRole('heading', { name: 'Projects' })).toBeTruthy();
     expect(window.location.hash).toBe('#/projects');
     const nav = screen.getByRole('navigation', { name: 'Main' });
-    expect([...nav.querySelectorAll('a')].map((link) => link.textContent)).toEqual(['Projects', 'Employees', 'Audit log']);
+    expect([...nav.querySelectorAll('a')].map((link) => link.textContent)).toEqual(['Projects', 'Employees', 'Workload', 'Audit log']);
     expect(await screen.findByText(/No projects yet/)).toBeTruthy();
   });
 });

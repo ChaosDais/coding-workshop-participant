@@ -1,5 +1,6 @@
 package com.acme.repos;
 
+import com.acme.models.DailyHours;
 import com.acme.models.TimeEntry;
 
 import java.math.BigDecimal;
@@ -37,6 +38,9 @@ public interface TimeEntryRepository {
 
     /** A person's finished entries, everywhere, oldest first; running timers are left out. */
     List<TimeEntry> findLoggedForUser(String userId);
+
+    /** Logged hours summed by person, milestone and day, oldest first; running timers are left out. */
+    List<DailyHours> dailyHours();
 
     /** Total cost of the logged time, by project id; projects without logged time are absent. */
     Map<String, BigDecimal> totalCostByProject();

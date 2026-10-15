@@ -273,6 +273,9 @@ class PostgresRepositoriesTest {
                 assertEquals(List.of(manual, stopped), entries.findForMilestone("p1", "m1"));
                 assertEquals(List.of(manual, stopped), entries.findLoggedForUser("e1"));
                 assertTrue(entries.findLoggedForUser("someone-else").isEmpty());
+                // Both entries fall on the same day, so they are summed into one row.
+                assertEquals(1, entries.dailyHours().size());
+                assertEquals(0, new BigDecimal("4.00").compareTo(entries.dailyHours().get(0).hours()));
                 assertEquals(0, new BigDecimal("200.00").compareTo(entries.totalCostByProject().get("p1")));
 
                 // A correction moves progress by the difference, and only applies to the hours it was based on.

@@ -26,6 +26,9 @@ import {
 } from '../utils/format.js';
 import { byId } from '../utils/users.js';
 
+/** The statuses employees can give their own milestones; only managers and admins complete them. */
+const EMPLOYEE_STATUSES = ['TODO', 'IN_PROGRESS', 'AWAITING_REVIEW'];
+
 /** The request body for changing a project's status, keeping everything else as it is. */
 function withStatus(project, status) {
   return {
@@ -281,17 +284,14 @@ function ProjectDetailPage({ projectId }) {
                           {milestone.description && <p className="muted small">{milestone.description}</p>}
                         </td>
                         <td>
-                          {editable && canManage ? (
+                          {/* Managers and admins set any status; employees move their own unfinished milestones
+                              between TODO, IN PROGRESS and AWAITING REVIEW, and only a manager completes them. */}
+                          {editable && (canManage || (mine && milestone.status !== 'COMPLETE')) ? (
                             <select aria-label={`Status of ${milestone.name}`} value={milestone.status} disabled={busy} onChange={(event) => act(() => projectsApi.setMilestoneStatus(projectId, milestone.id, event.target.value))}>
-                              {STATUSES.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
+                              {(canManage ? STATUSES : EMPLOYEE_STATUSES).map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
                             </select>
                           ) : <StatusBadge status={milestone.status} />}
                           {canManage && <StatusAge item={milestone} />}
-                          {!canManage && mine && editable && !['AWAITING_REVIEW', 'COMPLETE'].includes(milestone.status) && (
-                            <button type="button" className="link-button" disabled={busy} onClick={() => act(() => projectsApi.setMilestoneStatus(projectId, milestone.id, 'AWAITING_REVIEW'))}>
-                              Send for Review
-                            </button>
-                          )}
                         </td>
                         <td className="nowrap">{`${formatDate(milestone.startDate)} – ${formatDate(milestone.endDate)}`}</td>
                         <td className="numeric">

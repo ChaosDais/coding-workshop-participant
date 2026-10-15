@@ -82,7 +82,7 @@ function AccountTab() {
               <Field id="account-name" label="Name" required error={errors.name}>
                 {(props) => <input id={props.id} value={values.name} onChange={set('name')} autoComplete="name" aria-invalid={props.invalid} aria-describedby={props.describedBy} />}
               </Field>
-              <Field id="account-email" label="Email" required error={errors.email} hint="You sign in with this address.">
+              <Field id="account-email" label="Email" required error={errors.email}>
                 {(props) => <input id={props.id} type="email" value={values.email} onChange={set('email')} autoComplete="email" aria-invalid={props.invalid} aria-describedby={props.describedBy} />}
               </Field>
             </div>

@@ -1,6 +1,7 @@
 package com.acme.repos;
 
 import com.acme.errors.ConflictException;
+import com.acme.models.DailyHours;
 import com.acme.models.TimeEntry;
 
 import java.math.BigDecimal;
@@ -9,6 +10,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -120,6 +122,26 @@ public class PostgresTimeEntryRepository implements TimeEntryRepository {
     public List<TimeEntry> findLoggedForUser(String userId) {
         return query("SELECT " + COLUMNS + " FROM time_entries WHERE user_id = ? AND hours IS NOT NULL"
                 + " ORDER BY logged_at", userId);
+    }
+
+    @Override
+    public List<DailyHours> dailyHours() {
+        return database.run(connection -> {
+            List<DailyHours> days = new ArrayList<>();
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "SELECT user_id, project_id, milestone_id,"
+                            + " (coalesce(started_at, logged_at) AT TIME ZONE 'UTC')::date AS day, sum(hours) AS hours"
+                            + " FROM time_entries WHERE hours IS NOT NULL"
+                            + " GROUP BY user_id, project_id, milestone_id, day ORDER BY day");
+                 ResultSet row = statement.executeQuery()) {
+                while (row.next()) {
+                    days.add(new DailyHours(row.getString("user_id"), row.getString("project_id"),
+                            row.getString("milestone_id"), row.getObject("day", LocalDate.class),
+                            row.getBigDecimal("hours")));
+                }
+            }
+            return days;
+        });
     }
 
     @Override

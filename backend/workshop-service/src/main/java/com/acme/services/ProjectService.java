@@ -4,6 +4,7 @@ import com.acme.errors.ConflictException;
 import com.acme.errors.ForbiddenException;
 import com.acme.errors.NotFoundException;
 import com.acme.models.CompletionStatus;
+import com.acme.models.DailyHours;
 import com.acme.models.Milestone;
 import com.acme.models.Project;
 import com.acme.models.ProjectView;
@@ -32,8 +33,8 @@ import java.util.Set;
  *   <li>Managers can see and change only the active projects they manage, but cannot hand a project to another
  *       manager or change its description.</li>
  *   <li>Employees can see only the active, unfinished projects where they are assigned to a milestone, with all of that
- *       project's milestones; the one change they can make is moving one of their own milestones to
- *       AWAITING_REVIEW.</li>
+ *       project's milestones; the one change they can make is setting the status of one of their own milestones
+ *       to TODO, IN_PROGRESS or AWAITING_REVIEW (never COMPLETE, and not once it is complete).</li>
  * </ul>
  * Whoever makes the change, only employees on the project manager's team can be newly assigned to its milestones;
  * an employee moves to another team by an admin changing their manager.
@@ -73,7 +74,8 @@ public class ProjectService {
                 .toList();
         Map<String, BigDecimal> spent = timeEntries.totalCostByProject();
         Map<String, ProjectView.Dependency> summaries = dependencySummaries();
-        return visible.stream().map(project -> view(project, actor, spent, summaries)).toList();
+        Map<String, Map<String, Map<String, BigDecimal>>> hours = hoursByProject();
+        return visible.stream().map(project -> view(project, actor, spent, summaries, hours)).toList();
     }
 
     public ProjectView get(String id, User actor) {
@@ -128,17 +130,38 @@ public class ProjectService {
     }
 
     ProjectView view(Project project, User actor) {
-        return view(project, actor, timeEntries.totalCostByProject(), dependencySummaries());
+        return view(project, actor, timeEntries.totalCostByProject(), dependencySummaries(), hoursByProject());
     }
 
     private static ProjectView view(Project project, User actor, Map<String, BigDecimal> spent,
-                                    Map<String, ProjectView.Dependency> summaries) {
+                                    Map<String, ProjectView.Dependency> summaries,
+                                    Map<String, Map<String, Map<String, BigDecimal>>> hours) {
         List<ProjectView.Dependency> dependencies = project.dependsOn().stream()
                 .map(id -> summaries.getOrDefault(id, new ProjectView.Dependency(id, null, null, true)))
                 .toList();
-        return actor.role() == Role.EMPLOYEE
-                ? ProjectView.forEmployee(project, dependencies)
-                : ProjectView.full(project, spent.getOrDefault(project.id(), BigDecimal.ZERO), dependencies);
+        Map<String, Map<String, BigDecimal>> byMilestone = hours.getOrDefault(project.id(), Map.of());
+        if (actor.role() == Role.EMPLOYEE) {
+            // Only their own hours: what colleagues logged stays private.
+            Map<String, Map<String, BigDecimal>> own = new HashMap<>();
+            byMilestone.forEach((milestoneId, byUser) -> {
+                if (byUser.containsKey(actor.id())) {
+                    own.put(milestoneId, Map.of(actor.id(), byUser.get(actor.id())));
+                }
+            });
+            return ProjectView.forEmployee(project, dependencies, own);
+        }
+        return ProjectView.full(project, spent.getOrDefault(project.id(), BigDecimal.ZERO), dependencies, byMilestone);
+    }
+
+    /** Logged hours by project id, then milestone id, then user id. */
+    private Map<String, Map<String, Map<String, BigDecimal>>> hoursByProject() {
+        Map<String, Map<String, Map<String, BigDecimal>>> hours = new HashMap<>();
+        for (DailyHours day : timeEntries.dailyHours()) {
+            hours.computeIfAbsent(day.projectId(), id -> new HashMap<>())
+                    .computeIfAbsent(day.milestoneId(), id -> new HashMap<>())
+                    .merge(day.userId(), day.hours(), BigDecimal::add);
+        }
+        return hours;
     }
 
     /** Every project, active or archived, as the short summary shown for a dependency. */
@@ -267,8 +290,9 @@ public class ProjectService {
     }
 
     /**
-     * Moves a milestone to a new status. Employees can only send their own milestones to AWAITING_REVIEW,
-     * and cannot reopen one that is already COMPLETE; admins and the project's manager can set any status.
+     * Moves a milestone to a new status. Employees can set their own milestones to TODO, IN_PROGRESS or
+     * AWAITING_REVIEW, but not COMPLETE, and cannot change one that is already COMPLETE; admins and the project's
+     * manager can set any status.
      * Dependencies apply to everyone: a milestone cannot move past todo until what it depends on is complete.
      */
     public Milestone changeMilestoneStatus(String projectId, String milestoneId, CompletionStatus status,
@@ -283,8 +307,8 @@ public class ProjectService {
             if (!milestone.assignedEmployees().contains(actor.id())) {
                 throw new ForbiddenException("Access denied");
             }
-            if (status != CompletionStatus.AWAITING_REVIEW) {
-                throw new ForbiddenException("Employees can only set a milestone to AWAITING_REVIEW");
+            if (status == CompletionStatus.COMPLETE) {
+                throw new ForbiddenException("Only a manager or admin can set a milestone to COMPLETE");
             }
             if (milestone.status() == CompletionStatus.COMPLETE) {
                 throw new ConflictException("This milestone is already complete");

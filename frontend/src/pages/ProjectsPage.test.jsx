@@ -23,6 +23,7 @@ beforeEach(() => {
     'GET /projects': [
       project('p1', 'Design', 'IN_PROGRESS', [], {
         description: 'Visual identity',
+        hoursByMilestone: { ms1: { e1: 2.5, m1: 1 } },
         milestones: [{
           id: 'ms1', name: 'Wireframes', description: 'Low fidelity first', status: 'IN_PROGRESS', startDate: '2026-01-05',
           endDate: '2026-02-01', progressTime: 2, assignedEmployees: ['e1'], dependsOn: [],
@@ -117,7 +118,10 @@ describe('projects page', () => {
 
     await userEvent.click(milestone);
     expect(screen.getByText('Low fidelity first')).toBeTruthy();
-    expect(screen.getByText('Eli Employee')).toBeTruthy();
+    // Each person's time on the milestone, beside their name; the manager logged time without being assigned.
+    const people = screen.getByRole('list', { name: 'Time on Wireframes' });
+    const rows = within(people).getAllByRole('listitem').map((item) => item.textContent);
+    expect(rows).toEqual(['Eli Employee2 h 30 min', 'Morgan Manager · not assigned1 h']);
 
     // Clicking anywhere on the row closes it again.
     await userEvent.click(screen.getByText('Jan 1, 2026', { selector: 'td' }));
